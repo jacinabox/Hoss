@@ -210,6 +210,9 @@ fontName p = p `plusPtr` 28-}
 
 foreign import stdcall "windows.h GetDeviceCaps" getDeviceCaps :: HDC -> Int32 -> IO Int32
 
+lOGPIXELSX :: Int32
+lOGPIXELSX = 88
+
 lOGPIXELSY :: Int32
 lOGPIXELSY = 90
 
@@ -338,3 +341,20 @@ dM_OUT_BUFFER = 2
 
 dM_IN_PROMPT :: Word32
 dM_IN_PROMPT = 4
+
+type XFORM = Ptr ()
+
+foreign import stdcall "windows.h SetWorldTransform" setWorldTransform :: HDC -> XFORM -> IO Bool
+
+withXFORM :: (Float, Float, Float, Float, Float, Float) -> (XFORM -> IO t) -> IO t
+withXFORM (eM11, eM12, eM21, eM22, eDx, eDy) f = do
+	fp <- mallocForeignPtrBytes 24
+	withForeignPtr fp $ \p -> do
+		pokeByteOff p 0 eM11
+		pokeByteOff p 4 eM12
+		pokeByteOff p 8 eM21
+		pokeByteOff p 12 eM22
+		pokeByteOff p 16 eDx
+		pokeByteOff p 20 eDy
+		f p
+

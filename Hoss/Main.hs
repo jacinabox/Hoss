@@ -209,9 +209,7 @@ perform (DelCol n m) textVal = alter n (\x -> let Right (Left contents) = x in
 perform (DelRow n m) textVal = alter n (\x -> let Right (Left contents) = x in
 	Right $ Left $ map (second $ \ls -> take m ls ++ drop (m + 1) ls) contents) textVal
 
-createAFont dc font size bold italic underline = do
-	logy <- getDeviceCaps dc lOGPIXELSY
-	createFont (size * logy `div` 72) 0 0 0 (if bold then fW_BOLD else fW_NORMAL) italic underline False dEFAULT_CHARSET oUT_DEFAULT_PRECIS cLIP_DEFAULT_PRECIS dEFAULT_QUALITY fF_DONTCARE font
+createAFont dc font size bold italic underline = createFont (size * 96 `div` 72) 0 0 0 (if bold then fW_BOLD else fW_NORMAL) italic underline False dEFAULT_CHARSET oUT_DEFAULT_PRECIS cLIP_DEFAULT_PRECIS dEFAULT_QUALITY fF_DONTCARE font
 
 drawCaret dc (x, y) obj@(Object _ selected _ _ _ _) = when (selected == Caret) $ do
 	let (wd, ht) = flowMeasure obj
@@ -791,10 +789,10 @@ main = do
 		textVal <- readIORef text
 		printer $ \printerDC -> untilM (\(_, _, _, aft, aftBig) -> return $ null aft && null aftBig)
 			(\textVal -> do
-				let lay = layout 2250 ((0, 0), (2250, 0), 0) (fromZipper textVal)
-				let cutoff = maybe lay (\n -> take (n `max` 1) lay) (findIndex (\(_, y, (el, _)) -> y + height el > 2700) lay)
+				let lay = layout 624 ((0, 0), (624, 0), 0) (fromZipper textVal)
+				let cutoff = maybe lay (\n -> take (n `max` 1) lay) (findIndex (\(_, y, (el, _)) -> y + height el > 864) lay)
 				startPage printerDC
-				mapM_ (\(x, y, (el, _)) -> draw printerDC (x + 300, y + 300) el) cutoff
+				mapM_ (\(x, y, (el, _)) -> draw printerDC (x + 96, y + 96) el) cutoff
 				endPage printerDC
 				let (_, _, (el, _)) = last cutoff
 				return $ delete (position el + 1) textVal)

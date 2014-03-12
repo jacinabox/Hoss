@@ -30,6 +30,9 @@ printer f = with nullPtr $ \phdl ->
 				pokeByteOff p2 12 nullPtr
 				pokeByteOff p2 16 (0 :: Word32)
 				startDoc printerDC p2
+				scaleX <- getDeviceCaps printerDC lOGPIXELSX
+				scaleY <- getDeviceCaps printerDC lOGPIXELSY
+				withXFORM (fromIntegral scaleX / 96, 0, 0, fromIntegral scaleY / 96, 0, 0) (setWorldTransform printerDC)
 				f printerDC
 				endDoc printerDC
 				deleteDC printerDC

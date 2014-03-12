@@ -9,8 +9,8 @@ First go to the Displayable directory and do cabal install. Then go to the inner
 
 Problems to solve with this project:
 <ul>
-<li>Get printing working
-<li>Support linking to arbitrary objects instead of just bitmaps
+<li>It can only print to XPS Document Writer.
+<li>Support OLE linking to arbitrary objects instead of just bitmaps.
 <li>Make it stop crashing when you go to open or save.
 </ul>
 
