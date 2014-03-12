@@ -796,7 +796,7 @@ main = do
 				endPage printerDC
 				let (_, _, (el, _)) = last cutoff
 				return $ delete (position el + 1) textVal)
-			(goto 0 textVal)
+			$ toZipper $ clearSelection $ fromZipper textVal
 	let link = do
 		insetWnd <- readIORef inset
 		fileOpen insetWnd "Bitmaps (*.bmp)\0*.bmp\0" "bmp" >>= maybe
