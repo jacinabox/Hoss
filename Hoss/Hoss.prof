@@ -1,0 +1,134 @@
+	Fri Feb 21 10:55 2014 Time and Allocation Profiling Report  (Final)
+
+	   hoss +RTS -p -RTS
+
+	total time  =        2.06 secs   (2065 ticks @ 1000 us, 1 processor)
+	total alloc =   2,514,840 bytes  (excludes profiling overheads)
+
+COST CENTRE   MODULE           %time %alloc
+
+main          Main              98.6    8.2
+createAButton Main               0.8   75.6
+main.\        Main               0.4    8.5
+insetProc     Main               0.0    1.9
+CAF           GHC.IO.Handle.FD   0.0    1.3
+
+
+                                                                               individual     inherited
+COST CENTRE                       MODULE                     no.     entries  %time %alloc   %time %alloc
+
+MAIN                              MAIN                       104           0    0.0    0.0    98.6    9.7
+ CAF                              GHC.IO.Encoding.CodePage   197           0    0.0    0.0     0.0    0.0
+ CAF                              GHC.Conc.Sync              193           0    0.0    0.0     0.0    0.0
+ CAF                              GHC.IO.Handle.FD           191           0    0.0    1.3     0.0    1.3
+ CAF                              GHC.Exception              188           0    0.0    0.0     0.0    0.0
+ CAF                              GHC.IO.FD                  183           0    0.0    0.0     0.0    0.0
+ CAF                              GHC.IO.Encoding            181           0    0.0    0.0     0.0    0.0
+ CAF                              Control.Exception.Base     161           0    0.0    0.0     0.0    0.0
+ CAF                              Graphics.Win32.Control     156           0    0.0    0.0     0.0    0.0
+ CAF                              Graphics.Win32.Misc        147           0    0.0    0.0     0.0    0.0
+ CAF                              Graphics.Win32.GDI.Font    146           0    0.0    0.0     0.0    0.0
+ CAF                              Graphics.Win32.Message     145           0    0.0    0.0     0.0    0.0
+ CAF                              Graphics.Win32.Window      144           0    0.0    0.0     0.0    0.0
+ CAF                              Codec.BMP                  121           0    0.0    0.0     0.0    0.0
+ CAF                              Graphics.FrameWindow       115           0    0.0    0.0     0.0    0.0
+ CAF                              Graphics.Displayable       113           0    0.0    0.0     0.0    0.0
+ CAF                              Main                       111           0    0.0    0.0    98.6    8.2
+  toolbarHeight                   Main                       217           1    0.0    0.0     0.0    0.0
+  main                            Main                       208           1   98.6    8.2    98.6    8.2
+   main.execOnChange              Main                       224           1    0.0    0.0     0.0    0.0
+  main                            Main                       209           0    0.0    0.0     0.0    0.0
+   main.mousedown                 Main                       270           1    0.0    0.0     0.0    0.0
+   main.mousemove                 Main                       265          36    0.0    0.1     0.0    0.0
+   main.initialObject             Main                       239           1    0.0    0.0     0.0    0.0
+   main.doOnTables                Main                       227         133    0.0    0.6     0.0    0.0
+    main.\                        Main                       243           0    0.0    0.0     0.0    0.0
+     main.mousedown               Main                       279           0    0.0    0.0     0.0    0.0
+      main.mousemove              Main                       280           0    0.0    0.0     0.0    0.0
+       main.mousemove.\           Main                       281           1    0.0    0.0     0.0    0.0
+     main.\.\                     Main                       244           0    0.0    0.0     0.0    0.0
+      insetProc                   Main                       245         130    0.0    0.2     0.0    0.0
+    main.execOnChange             Main                       228           0    0.0    0.0     0.0    0.0
+     main.execOnChange.\          Main                       229           2    0.0    0.0     0.0    0.0
+   main.execOnChange              Main                       225           0    0.0    0.2     0.0    0.0
+    main.execOnChange.\           Main                       231           0    0.0    0.3     0.0    0.0
+     color                        Main                       262           2    0.0    0.0     0.0    0.0
+     size                         Main                       241           2    0.0    0.0     0.0    0.0
+     font                         Main                       240           2    0.0    0.0     0.0    0.0
+     main.execOnChange.\.(...)    Main                       235           2    0.0    0.0     0.0    0.0
+      toView                      Main                       236           2    0.0    0.0     0.0    0.0
+       fromZipper                 Main                       238           2    0.0    0.0     0.0    0.0
+       toView0                    Main                       237           2    0.0    0.0     0.0    0.0
+     main.execOnChange.\.x        Main                       234           2    0.0    0.0     0.0    0.0
+     obj                          Main                       233           2    0.0    0.0     0.0    0.0
+     main.doOnTables              Main                       232           0    0.0    0.0     0.0    0.0
+    main.doOnTables               Main                       230           0    0.0    0.0     0.0    0.0
+    main.\                        Main                       226           0    0.0    0.0     0.0    0.0
+   main.promptForSave             Main                       221           1    0.0    0.0     0.0    0.0
+   main.newFile                   Main                       220           1    0.0    0.0     0.0    0.0
+   main.\                         Main                       210         212    0.4    8.5     0.0    0.0
+    main.mousedown                Main                       271           0    0.0    0.0     0.0    0.0
+     main.mousemove               Main                       276           0    0.0    0.0     0.0    0.0
+      main.mousemove.\            Main                       283           0    0.0    0.0     0.0    0.0
+       main.mousemove.\.m         Main                       290           1    0.0    0.0     0.0    0.0
+        toView                    Main                       293           1    0.0    0.0     0.0    0.0
+         fromZipper               Main                       295           1    0.0    0.0     0.0    0.0
+         toView0                  Main                       294           1    0.0    0.0     0.0    0.0
+        flowMeasure               Main                       292           1    0.0    0.0     0.0    0.0
+         createAFont              Main                       296           1    0.0    0.0     0.0    0.0
+       main.doOnTables            Main                       284           0    0.0    0.0     0.0    0.0
+        main.doOnTables.\         Main                       285           1    0.0    0.0     0.0    0.0
+         main.doOnTables.\.\      Main                       286           1    0.0    0.0     0.0    0.0
+          setSelection            Main                       289           1    0.0    0.0     0.0    0.0
+           setSelection0          Main                       297           1    0.0    0.0     0.0    0.0
+            goto                  Main                       299           1    0.0    0.0     0.0    0.0
+             headG                Main                       301           2    0.0    0.0     0.0    0.0
+             position             Main                       300           2    0.0    0.0     0.0    0.0
+            setSelection0.sel     Main                       298           1    0.0    0.0     0.0    0.0
+             doOnHead2            Main                       303           1    0.0    0.0     0.0    0.0
+              headH               Main                       305           1    0.0    0.0     0.0    0.0
+              setSelection0.sel.\ Main                       304           1    0.0    0.0     0.0    0.0
+             position             Main                       302           1    0.0    0.0     0.0    0.0
+          main.doOnTables.\.\.\   Main                       287           1    0.0    0.0     0.0    0.0
+      main.doOnTables             Main                       282           0    0.0    0.0     0.0    0.0
+      getCell                     Main                       277           1    0.0    0.0     0.0    0.0
+       position                   Main                       291           1    0.0    0.0     0.0    0.0
+       obj                        Main                       278           1    0.0    0.0     0.0    0.0
+     getCell                      Main                       274           1    0.0    0.0     0.0    0.0
+      position                    Main                       288           1    0.0    0.0     0.0    0.0
+      obj                         Main                       275           1    0.0    0.0     0.0    0.0
+     obj                          Main                       273           1    0.0    0.0     0.0    0.0
+     getCellEdge                  Main                       272           1    0.0    0.0     0.0    0.0
+    main.mousemove                Main                       266           0    0.0    0.4     0.0    0.0
+     getCell                      Main                       267          35    0.0    0.1     0.0    0.0
+      obj                         Main                       268          35    0.0    0.0     0.0    0.0
+    mouse                         Main                       263          36    0.0    0.0     0.0    0.0
+     mousedown                    Main                       269           1    0.0    0.0     0.0    0.0
+     mousemove                    Main                       264          35    0.0    0.0     0.0    0.0
+    draw                          Main                       251           2    0.0    0.0     0.0    0.0
+     drawCaret                    Main                       254           2    0.0    0.0     0.0    0.0
+      drawCaret.ht                Main                       260           2    0.0    0.0     0.0    0.0
+      drawCaret.(...)             Main                       257           2    0.0    0.0     0.0    0.0
+       flowMeasure                Main                       258           2    0.0    0.0     0.0    0.0
+        createAFont               Main                       259           2    0.0    0.1     0.0    0.0
+      drawCaret.wd                Main                       256           2    0.0    0.0     0.0    0.0
+      ==                          Main                       255           2    0.0    0.0     0.0    0.0
+     createAFont                  Main                       253           2    0.0    0.1     0.0    0.0
+     ==                           Main                       252           2    0.0    0.0     0.0    0.0
+    flowMeasure                   Main                       249           6    0.0    0.1     0.0    0.0
+     createAFont                  Main                       250           6    0.0    0.3     0.0    0.0
+    main.\.\                      Main                       242         130    0.0    0.5     0.0    0.0
+     insetProc                    Main                       247           0    0.0    1.8     0.0    0.0
+     main.doOnTables              Main                       246           0    0.0    0.0     0.0    0.0
+    main.promptForSave            Main                       222           0    0.0    0.0     0.0    0.0
+     main.newFile                 Main                       223           0    0.0    0.0     0.0    0.0
+    main.\.name                   Main                       219           1    0.0    0.0     0.0    0.0
+    initControls                  Main                       211           1    0.0    0.7     0.0    0.0
+     initControls.\               Main                       248           9    0.0    0.1     0.0    0.0
+      initControls.\.\            Main                       261           2    0.0    0.1     0.0    0.0
+     createAButton                Main                       215          20    0.8   75.6     0.0    0.0
+      createAButton.\             Main                       218          76    0.0    0.0     0.0    0.0
+      createAButton.name          Main                       216          20    0.0    0.3     0.0    0.0
+     initControls.\               Main                       214           2    0.0    0.0     0.0    0.0
+     createAFont                  Main                       213           1    0.0    0.0     0.0    0.0
+     initControls.name            Main                       212           1    0.0    0.0     0.0    0.0

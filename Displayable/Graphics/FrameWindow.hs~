@@ -1,0 +1,32 @@
+module Graphics.FrameWindow where
+
+import Graphics.Win32
+import System.Win32.DLL
+import Data.Bits
+import Control.Monad
+import Data.IORef
+
+-- | Call this to open a main window. You can add windows to the dialogs list
+--   and they will be treated as dialogs by the dialog manager.
+frameWindow :: String -> Maybe HICON -> Maybe HMENU -> (IORef [HWND] -> WindowClosure) -> IO ()
+frameWindow title icon menu closure = do
+	dialogs <- newIORef []
+	hdl <- getModuleHandle Nothing
+	cursor <- loadCursor Nothing iDC_ARROW
+	white <- getStockBrush nULL_BRUSH
+	let name = mkClassName "Frame"
+	registerClass (0, hdl, icon, Just cursor, Just white, Nothing, name)
+	wnd <- createWindow name title (wS_OVERLAPPEDWINDOW .|. wS_VISIBLE .|. wS_CLIPCHILDREN) Nothing Nothing Nothing Nothing Nothing menu hdl (closure dialogs)
+	sendMessage wnd wM_CREATE 0 0
+	allocaMessage $ \msg ->
+		let loop = do
+			b <- getMessage msg Nothing
+			when b $ do
+				dialogsVal <- readIORef dialogs
+				bools <- mapM (\dlg -> isDialogMessage dlg msg) dialogsVal
+				unless (or bools) $ do
+					translateMessage msg
+					dispatchMessage msg
+					return ()
+				loop in
+		loop
