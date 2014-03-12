@@ -201,8 +201,14 @@ instance Displayable BMP where
 		(wd, ht) = bmpDimensions bmp
 	draw dc (x, y) bmp = unsafeUseAsCString (bmpRawImageData bmp) $ \pBits ->
 			withBITMAP (bmpBitmapInfo bmp) $ \pBmp -> do
-				setDIBitsToDevice dc x y (fromIntegral wd) (fromIntegral ht) 0 0 0 (fromIntegral ht) pBits pBmp dIB_RGB_COLORS
-				return () where
+				dc' <- createCompatibleDC (Just dc)
+				bmp <- createCompatibleBitmap dc (fromIntegral wd) (fromIntegral ht)
+				oldBmp <- selectBitmap dc' bmp
+				setDIBitsToDevice dc' 0 0 (fromIntegral wd) (fromIntegral ht) 0 0 0 (fromIntegral ht) pBits pBmp dIB_RGB_COLORS
+				bitBlt dc x y (fromIntegral wd) (fromIntegral ht) dc' 0 0 sRCCOPY
+				selectBitmap dc' oldBmp
+				deleteBitmap bmp
+				deleteDC dc' where
 		(wd, ht) = bmpDimensions bmp
 
 -- | A fixed list of values the user can select from with a popup menu.
