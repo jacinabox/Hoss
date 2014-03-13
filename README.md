@@ -11,7 +11,6 @@ Problems to solve with this project:
 <ul>
 <li>It can only print to XPS Document Writer.
 <li>Support OLE linking to arbitrary objects instead of just bitmaps.
-<li>Make it stop crashing when you go to open or save.
 </ul>
 
 Looking for Haskellites to hack on this project.

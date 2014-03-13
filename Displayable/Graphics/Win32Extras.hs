@@ -297,7 +297,7 @@ fileOpenOrSave action wnd filter extension = do
 		pokeByteOff p 44 nullPtr
 		pokeByteOff p 48 nullPtr
 		pokeByteOff p 52 (oFN_EXPLORER .|. if action == Open then oFN_FILEMUSTEXIST else oFN_OVERWRITEPROMPT)
-		pokeByteOff p 58 ext
+		pokeByteOff p 60 ext
 		b <- (if action == Open then getOpenFileName else getSaveFileName) p
 		if b then do
 				liftM Just (peekTString p2)
