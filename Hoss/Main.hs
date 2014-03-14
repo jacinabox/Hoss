@@ -743,7 +743,6 @@ main = do
 		writeIORef changed False
 		execOnChange
 	let copy = do
-		textVal <- readIORef text
 		(_, may, n, m) <- readIORef select
 		doOnTables $ \get _ _ _ -> do
 			textVal <- get
@@ -758,13 +757,11 @@ main = do
 			setClipboardData format hdl
 			closeClipboard
 	let cut = do
-		textVal <- readIORef text
 		(_, _, n, m) <- readIORef select
 		doOnTables $ \_ _ _ performCommand -> do
 			copy
 			performCommand (if m < n then Delete m n else Delete n m)
 	let paste = do
-		textVal <- readIORef text
 		(_, _, _, n) <- readIORef select
 		doOnTables $ \get _ _ performCommand -> do
 			textVal <- get
@@ -783,16 +780,19 @@ main = do
 				closeClipboard)
 				(\(_ :: SomeException) -> return ())
 	let setJustification just = do
-		textVal <- readIORef text
 		(_, may, n, m) <- readIORef select
 		doOnTables $ \get put _ _ -> do
 			textVal <- get
 			put $ setJustif just n m textVal
-	let setFloated flt' = do
-		textVal <- readIORef text
-		doOnTables $ \get put _ _ -> do
+	let setFloated flt' = doOnTables $ \get put _ _ -> do
 			textVal <- get
 			put $ fromView textVal $ map (\(x, flt) -> (x, if not (isLeft (obj x)) && selection x == Selected then flt' else flt)) (toView textVal)
+	let setStyle hasStyle setStyle = doOnTables $ \get put _ _ -> do
+			textVal <- get
+			let hasIt = all (\(x, _) -> selection x == Unselected || case obj x of
+				Left wrd -> hasStyle wrd
+				_ -> True) (toView textVal)
+			put $ fromView textVal $ map (\x -> if selection (fst x) /= Unselected then first (funOnWord (setStyle (not hasIt))) x else x) (toView textVal)
 	let printing = catch (do
 		textVal <- readIORef text
 		printer $ \printerDC -> untilM (\(_, _, _, aft, aftBig) -> return $ null aft && null aftBig)
@@ -849,27 +849,30 @@ main = do
 		createAButton "Center.bmp" (280 + 20) (setJustification Center) wnd hdl 20
 		createAButton "Right.bmp" (280 + 2 * 20) (setJustification R) wnd hdl 20
 		createAButton "Justified.bmp" (280 + 3 * 20) (setJustification Justified) wnd hdl 20
-		createAButton "Inline.bmp" 370 (setFloated Inline) wnd hdl 20
-		createAButton "FloatLeft.bmp" (370 + 20) (setFloated FloatLeft) wnd hdl 20
-		createAButton "FloatRight.bmp" (370 + 2 * 20) (setFloated FloatRight) wnd hdl 20
-		createAButton "New.bmp" 440 (newFile wnd) wnd hdl 32
-		createAButton "Open.bmp" (440 + 32) (doOpen wnd) wnd hdl 32
-		createAButton "Save.bmp" (440 + 2 * 32) (doSave wnd) wnd hdl 32
-		createAButton "Cut.bmp" (440 + 3 * 32) cut wnd hdl 32
-		createAButton "Copy.bmp" (440 + 4 * 32) copy wnd hdl 32
-		createAButton "Paste.bmp" (440 + 5 * 32) paste wnd hdl 32 
-		undo <- createAButton "Undo.bmp" (440 + 6 * 32) undoCommand wnd hdl 32
-		redo <- createAButton "Redo.bmp" (440 + 7 * 32) redoCommand wnd hdl 32
-		undo2 <- createAButton "UndoDis.bmp" (440 + 6 * 32) (return ()) wnd hdl 32
-		redo2 <- createAButton "RedoDis.bmp" (440 + 7 * 32) (return ()) wnd hdl 32 
-		createAButton "Newcol.bmp" (440 + 8 * 32) newCol wnd hdl 32
-		createAButton "Newrow.bmp" (440 + 9 * 32) newRow wnd hdl 32 
-		delCol <- createAButton "Delcol.bmp" (440 + 10 * 32) delCol wnd hdl 32
-		delRow <- createAButton "Delrow.bmp" (440 + 11 * 32) delRow wnd hdl 32
-		delCol2 <- createAButton "DelcolDis.bmp" (440 + 10 * 32) (return ()) wnd hdl 32
-		delRow2 <- createAButton "DelrowDis.bmp" (440 + 11 * 32) (return ()) wnd hdl 32
-		createAButton "Print.bmp" (440 + 12 * 32) printing wnd hdl 32
-		createAButton "OLE.bmp" (440 + 13 * 32) link wnd hdl 32
+		createAButton "Bold.bmp" 370 (setStyle bold (\b x -> x { bold = b })) wnd hdl 20
+		createAButton "Italic.bmp" (370 + 20) (setStyle italic (\b x -> x { italic = b })) wnd hdl 20
+		createAButton "Underline.bmp" (370 + 2 * 20) (setStyle underline (\b x -> x { underline = b })) wnd hdl 20
+		createAButton "Inline.bmp" 440 (setFloated Inline) wnd hdl 20
+		createAButton "FloatLeft.bmp" (440 + 20) (setFloated FloatLeft) wnd hdl 20
+		createAButton "FloatRight.bmp" (440 + 2 * 20) (setFloated FloatRight) wnd hdl 20
+		createAButton "New.bmp" 510 (newFile wnd) wnd hdl 32
+		createAButton "Open.bmp" (510 + 32) (doOpen wnd) wnd hdl 32
+		createAButton "Save.bmp" (510 + 2 * 32) (doSave wnd) wnd hdl 32
+		createAButton "Cut.bmp" (510 + 3 * 32) cut wnd hdl 32
+		createAButton "Copy.bmp" (510 + 4 * 32) copy wnd hdl 32
+		createAButton "Paste.bmp" (510 + 5 * 32) paste wnd hdl 32 
+		undo <- createAButton "Undo.bmp" (510 + 6 * 32) undoCommand wnd hdl 32
+		redo <- createAButton "Redo.bmp" (510 + 7 * 32) redoCommand wnd hdl 32
+		undo2 <- createAButton "UndoDis.bmp" (510 + 6 * 32) (return ()) wnd hdl 32
+		redo2 <- createAButton "RedoDis.bmp" (510 + 7 * 32) (return ()) wnd hdl 32 
+		createAButton "Newcol.bmp" (510 + 8 * 32) newCol wnd hdl 32
+		createAButton "Newrow.bmp" (510 + 9 * 32) newRow wnd hdl 32 
+		delCol <- createAButton "Delcol.bmp" (510 + 10 * 32) delCol wnd hdl 32
+		delRow <- createAButton "Delrow.bmp" (510 + 11 * 32) delRow wnd hdl 32
+		delCol2 <- createAButton "DelcolDis.bmp" (510 + 10 * 32) (return ()) wnd hdl 32
+		delRow2 <- createAButton "DelrowDis.bmp" (510 + 11 * 32) (return ()) wnd hdl 32
+		createAButton "Print.bmp" (510 + 12 * 32) printing wnd hdl 32
+		createAButton "OLE.bmp" (510 + 13 * 32) link wnd hdl 32
 		writeIORef undoRef (undo, undo2)
 		writeIORef redoRef (redo, redo2)
 		writeIORef delColRef (delCol, delCol2)
