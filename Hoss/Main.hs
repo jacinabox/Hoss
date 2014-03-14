@@ -585,6 +585,7 @@ main = do
 						return ()
 				InTable n col row (Insert m ls) -> setSelTable n col row may (m + length (concatMap snd ls)) (m + length (concatMap snd ls))
 				InTable n col row (Delete m _) -> setSelTable n col row may m m
+				Delete n _ -> setSel n n
 				_ -> return ()
 			Nothing -> case x of
 				Insert n ls -> setSel (n + length (concatMap snd ls)) (n + length (concatMap snd ls))
@@ -607,10 +608,13 @@ main = do
 		writeIORef undo (bef, [x])
 		redoCommand
 		(bef, _) <- readIORef undo
+
+		-- Make it so that multiple alters of the same word are compressed into a single entry in the undo list
 		writeIORef undo (case bef of
 			Alter n _:Alter m _:_ | n == m -> tail bef
 			InTable n col row (Alter m _):InTable n2 col2 row2 (Alter m2 _):_ | n == n2 && col == col2 && row == row2 && m == m2 -> tail bef
 			_ -> bef, [])
+
 		writeIORef changed True
 	    doOnTables :: (IO (Zipper Object) -> (Zipper Object -> IO ()) -> (Int -> Int -> IO ()) -> (Command -> IO ()) -> IO t) -> IO t
 	    doOnTables f = do
@@ -686,7 +690,7 @@ main = do
 	let delRow = do
 		textVal <- readIORef text
 		(_, Just (n, _, row), _, _) <- readIORef select
-		performCommand $ if oneRowTable (fst (toView textVal !! n)) then do
+		performCommand $ if oneRowTable (fst (toView textVal !! n)) then
 				Delete n (n + 1)
 			else
 				DelRow n row
