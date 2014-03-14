@@ -309,10 +309,6 @@ fromView0 [] _ = []
 
 fromView zip@(_, _, _, aft, _) view = goto (position (fst (head aft))) $ toZipper $ fromView0 (fromZipper zip) view
 
-renumber0 n ls = renum n ls [] where
-	renum n (x:xs) acc = renum (n + 1) xs (first (\x -> x { position = n }) x : acc)
-	renum n [] acc = (reverse acc, n)
-
 headR [] = error "headR"
 headR (x:_) = x
 
@@ -339,6 +335,10 @@ headI (x:_) = x
 
 headP [] = error "headP"
 headP (x:_) = x
+
+renumber0 n ls = first (runIdentity . doOnAll0 (return . fromZipper . renumber . toZipper) return) $ renum n ls [] where
+	renum n (x:xs) acc = renum (n + 1) xs (first (\x -> x { position = n }) x : acc)
+	renum n [] acc = (reverse acc, n)
 
 renumber (befBig, just, bef, aft, aftBig) = (befBig, just, reverse bef', aft', aftBig') where
 	(bef', m) = renumber0 (if null befBig then 0 else position (fst $ last $ snd $ headR befBig) + 1) (reverse bef)
@@ -386,16 +386,15 @@ goto n zip@(_, _, _, aft, aftBig) = if position (fst (headG aft)) > n then
 
 doOnHead f (befBig, just, bef, aft, aftBig) = (befBig, just, bef, first f (headH aft) : tail aft, aftBig)
 
-doOnAll f = mapM (\(x, flt) -> case obj x of
+doOnAll0 f g = mapM (\(x, flt) -> case obj x of
 	Right (Left contents) -> do
-		ls <- mapM (\(wid, ls) -> liftM ((,) wid) (mapM (\ls -> liftM (fromView0 ls) $ doOnAll f $ toView0 ls) ls)) contents
-		y <- f $ x { obj = Right $ Left ls }
-		return (y, flt)
-	_ -> do
-		y <- f x
-		return (y, flt))
+		ls <- mapM (\(wid, ls) -> liftM ((,) wid) (mapM f ls)) contents
+		g (x { obj = Right $ Left ls }, flt)
+	_ -> g (x, flt))
 
-clearSelection ls = fromView0 ls $ runIdentity $ doOnAll (\x -> return $ x { selection = Unselected }) $ toView0 ls
+doOnAll f = doOnAll0 (\ls -> liftM (fromView0 ls) $ mapM f $ toView0 ls) f
+
+clearSelection ls = fromView0 ls $ runIdentity $ doOnAll (\(x, flt) -> return (x { selection = Unselected }, flt)) $ toView0 ls
 
 enterKey zip@(_, just, _, aft, _) = Insert (position (fst (headE aft))) [(L, [(funOnWord (\x -> x { string = "" }) $ fst $ findWord zip, Inline)]), (just, [])]
 
@@ -423,7 +422,7 @@ setSelection n m = if n == m then
 		setSelection0 n m
 
 setJustif just n m zip = justif (goto n zip) where
-	justif zip@(befBig, _, bef, aft, aftBig) = (if m < position (fst (head aft)) then
+	justif zip@(befBig, _, bef, aft, aftBig) = (if m <= position (fst (head aft)) then
 			id
 		else
 			justif . forwards) (befBig, just, bef, aft, aftBig)
@@ -607,6 +606,11 @@ main = do
 		(bef, _) <- readIORef undo
 		writeIORef undo (bef, [x])
 		redoCommand
+		(bef, _) <- readIORef undo
+		writeIORef undo (case bef of
+			Alter n _:Alter m _:_ | n == m -> tail bef
+			InTable n col row (Alter m _):InTable n2 col2 row2 (Alter m2 _):_ | n == n2 && col == col2 && row == row2 && m == m2 -> tail bef
+			_ -> bef, [])
 		writeIORef changed True
 	    doOnTables :: (IO (Zipper Object) -> (Zipper Object -> IO ()) -> (Int -> Int -> IO ()) -> (Command -> IO ()) -> IO t) -> IO t
 	    doOnTables f = do
@@ -711,11 +715,11 @@ main = do
 			else
 				m
 	let loadBitmap path = catch (liftM (either (const missing) id) $ readBMP path) (\(_ :: SomeException) -> return missing)
-	let realize = doOnAll (\ob -> case obj ob of
+	let realize = doOnAll (\(ob, flt) -> case obj ob of
 		Right (Right (Link path _)) -> do
 			bmp <- loadBitmap path
-			return $ ob { obj = Right $ Right $ Link path bmp }
-		_ -> return ob)
+			return (ob { obj = Right $ Right $ Link path bmp }, flt)
+		_ -> return (ob, flt))
 		. map (first $ \x -> x { mousedown = mousedown, mousemove = mousemove, mouseup = mouseup })
 	let doOpen wnd = promptForSave wnd $ fileOpen wnd filt "hos" >>= maybe
 		(return ())
@@ -785,7 +789,7 @@ main = do
 		doOnTables $ \get put _ _ -> do
 			textVal <- get
 			put $ fromView textVal $ map (\(x, flt) -> (x, if not (isLeft (obj x)) && selection x == Selected then flt' else flt)) (toView textVal)
-	let printing = do
+	let printing = catch (do
 		textVal <- readIORef text
 		printer $ \printerDC -> untilM (\(_, _, _, aft, aftBig) -> return $ null aft && null aftBig)
 			(\textVal -> do
@@ -796,7 +800,8 @@ main = do
 				endPage printerDC
 				let (_, _, (el, _)) = last cutoff
 				return $ delete (position el + 1) textVal)
-			$ toZipper $ clearSelection $ fromZipper textVal
+			$ toZipper $ clearSelection $ fromZipper textVal)
+		(\(_ :: SomeException) -> return ())
 	let link = do
 		insetWnd <- readIORef inset
 		fileOpen insetWnd "Bitmaps (*.bmp)\0*.bmp\0" "bmp" >>= maybe
