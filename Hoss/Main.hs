@@ -505,6 +505,10 @@ insetProc format fontRef sizeRef clrRef mousedown mousemove mouseup wnd msg wPar
 	else
 		defWindowProc (Just wnd) msg wParam lParam
 
+showAndHide b (ctrl, ctrl2) = do
+	showWindow ctrl (if b then sW_HIDE else sW_SHOW)
+	showWindow ctrl2 (if b then sW_SHOW else sW_HIDE)
+
 main = do
 	textLs <- newIORef undefined
 	text <- newIORef undefined
@@ -530,19 +534,15 @@ main = do
 		writeIORef textLs (fromZipper textVal)
 		readIORef onChange >>= id
 		(bef, aft) <- readIORef undo
-		undoCtrl <- readIORef undoRef
-		redoCtrl <- readIORef redoRef
+		undo <- readIORef undoRef
+		redo <- readIORef redoRef
 		delCol <- readIORef delColRef
 		delRow <- readIORef delRowRef
-		showWindow undoCtrl (if null bef then sW_HIDE else sW_SHOW)
-		showWindow redoCtrl (if null aft then sW_HIDE else sW_SHOW)
+		showAndHide (null bef) undo
+		showAndHide (null aft) redo
 		(_, may, _, _) <- readIORef select
-		if isNothing may then do
-				showWindow delCol sW_HIDE
-				showWindow delRow sW_HIDE
-			else do
-				showWindow delCol sW_SHOW
-				showWindow delRow sW_SHOW
+		showAndHide (isNothing may) delCol
+		showAndHide (isNothing may) delRow
 		doOnTables $ \get _ _ _ -> do
 			(_, _, _, aft, _) <- get
 			let (x, _) = head aft
@@ -859,17 +859,21 @@ main = do
 		createAButton "Copy.bmp" (440 + 4 * 32) copy wnd hdl 32
 		createAButton "Paste.bmp" (440 + 5 * 32) paste wnd hdl 32 
 		undo <- createAButton "Undo.bmp" (440 + 6 * 32) undoCommand wnd hdl 32
-		redo <- createAButton "Redo.bmp" (440 + 7 * 32) redoCommand wnd hdl 32 
+		redo <- createAButton "Redo.bmp" (440 + 7 * 32) redoCommand wnd hdl 32
+		undo2 <- createAButton "UndoDis.bmp" (440 + 6 * 32) (return ()) wnd hdl 32
+		redo2 <- createAButton "RedoDis.bmp" (440 + 7 * 32) (return ()) wnd hdl 32 
 		createAButton "Newcol.bmp" (440 + 8 * 32) newCol wnd hdl 32
 		createAButton "Newrow.bmp" (440 + 9 * 32) newRow wnd hdl 32 
 		delCol <- createAButton "Delcol.bmp" (440 + 10 * 32) delCol wnd hdl 32
 		delRow <- createAButton "Delrow.bmp" (440 + 11 * 32) delRow wnd hdl 32
+		delCol2 <- createAButton "DelcolDis.bmp" (440 + 10 * 32) (return ()) wnd hdl 32
+		delRow2 <- createAButton "DelrowDis.bmp" (440 + 11 * 32) (return ()) wnd hdl 32
 		createAButton "Print.bmp" (440 + 12 * 32) printing wnd hdl 32
 		createAButton "OLE.bmp" (440 + 13 * 32) link wnd hdl 32
-		writeIORef undoRef undo
-		writeIORef redoRef redo
-		writeIORef delColRef delCol
-		writeIORef delRowRef delRow
+		writeIORef undoRef (undo, undo2)
+		writeIORef redoRef (redo, redo2)
+		writeIORef delColRef (delCol, delCol2)
+		writeIORef delRowRef (delRow, delRow2)
 	frameWindow "Hoss" Nothing Nothing $ \dialogs wnd msg wParam lParam -> if msg == wM_CREATE then do
 			hdl <- getModuleHandle Nothing
  			initControls wnd hdl
