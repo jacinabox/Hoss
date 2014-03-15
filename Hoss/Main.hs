@@ -267,16 +267,17 @@ instance Displayable Object where
 		selectFont dc oldFont
 		deleteFont font
 		releaseDC Nothing dc
-		return (if null s then 0 else x + 3, y)
+		return (if null s then 0 else x, y)
 	flowMeasure (Object _ _ (Right (Left contents)) _ _ _) = (padding + sum (map ((+padding) . fst) contents),
 		padding + sum (map (\(col, ls) -> padding + maximum (map (measureCell (fst (contents !! col))) ls)) $ zip [0..] $ transpose $ map snd contents))
 	flowMeasure (Object _ _ (Right (Right (Link _ ob))) _ _ _) = ((fromIntegral . dib3Width) &&& (fromIntegral . dib3Height)) (getBitmapInfo3 ob)
 	draw dc (x, y) obj@(Object _ selected (Left (Word font size clr bold italic underline s)) _ _ _) = do
 		if selected == Selected then do
 				c_SetBkColor dc (rgb 0 0 0)
+				c_SetBkMode dc oPAQUE
 				c_SetTextColor dc (rgb 255 255 255)
 			else do
-				c_SetBkColor dc (rgb 255 255 255)
+				c_SetBkMode dc tRANSPARENT
 				c_SetTextColor dc clr
 		font <- createAFont dc font size bold italic underline
 		oldFont <- selectFont dc font
