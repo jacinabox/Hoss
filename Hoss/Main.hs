@@ -189,7 +189,8 @@ changeAt n f ls = take n ls ++ f (ls !! n) : drop (n + 1) ls
 
 invert (Insert n ls) _ = Delete n (n + length (concatMap snd ls))
 invert (Delete n m) textVal = invertDelete n m textVal
-invert (Alter n _) textVal@(_, _, bef, _, _) = Alter n (let Left wrd = obj (fst (head bef)) in string wrd)
+invert (Alter n _) textVal = Alter n (let Left wrd = obj (fst (headI bef)) in string wrd) where
+	(_, _, bef, _, _) = goto n textVal
 invert (InTable n col row cmd) textVal = InTable n col row $ invert cmd $ toZipper $ snd ((let Right (Left tbl) = obj (fst (toView textVal !! n)) in tbl) !! col) !! row
 invert (NewCol n m _) _ = DelCol n m
 invert (NewRow n m _) _ = DelRow n m
@@ -326,7 +327,7 @@ toView ls = toView0 (fromZipper ls)
 fromView0 ((just, ls):xs) view = (just, take (length ls) view) : fromView0 xs (drop (length ls) view)
 fromView0 [] _ = []
 
-fromView zip@(_, _, _, aft, _) view = goto (position (fst (head aft))) $ toZipper $ fromView0 (fromZipper zip) view
+fromView zip@(_, _, _, aft, _) view = goto (position (fst (headF aft))) $ toZipper $ fromView0 (fromZipper zip) view
 
 headR [] = error "headR"
 headR (x:_) = x
@@ -355,6 +356,9 @@ headI (x:_) = x
 headP [] = error "headP"
 headP (x:_) = x
 
+headA [] = error "headA"
+headA (x:_) = x
+
 renumber0 n ls = first (runIdentity . doOnAll0 (return . fromZipper . renumber . toZipper) return) $ renum n ls [] where
 	renum n (x:xs) acc = renum (n + 1) xs (first (\x -> x { position = n }) x : acc)
 	renum n [] acc = (reverse acc, n)
@@ -364,7 +368,7 @@ renumber (befBig, just, bef, aft, aftBig) = (befBig, just, reverse bef', aft', a
 	(aft', x) = renumber0 m aft
 	aftBig' = map fst $ tail $ scanl (\(_, m) (just, ls) -> first ((,) just) $ renumber0 m ls) (undefined, x) aftBig
 
-alterBef n f zip = (befBig, just, first (\x -> x { obj = f (obj x) }) (head bef) : tail bef, aft, aftBig) where
+alterBef n f zip = (befBig, just, first (\x -> x { obj = f (obj x) }) (headA bef) : tail bef, aft, aftBig) where
 	(befBig, just, bef, aft, aftBig) = goto n zip
 
 alter n f zip = alterBef (n + 1) f zip
@@ -411,7 +415,7 @@ doOnAll0 f g = mapM (\(x, flt) -> case obj x of
 		g (x { obj = Right $ Left ls }, flt)
 	_ -> g (x, flt))
 
-doOnAll f = doOnAll0 (\ls -> liftM (fromView0 ls) $ mapM f $ toView0 ls) f
+doOnAll f = doOnAll0 (\ls -> liftM (fromView0 ls) $ doOnAll f $ toView0 ls) f
 
 clearSelection ls = fromView0 ls $ runIdentity $ doOnAll (\(x, flt) -> return (x { selection = Unselected }, flt)) $ toView0 ls
 
@@ -464,6 +468,9 @@ oneRowTable ob = null (tail (snd (head contents))) where
 
 innerCommand (InTable _ _ _ cmd) = innerCommand cmd
 innerCommand cmd = cmd
+
+tableList (InTable n col row cmd) = (n, col, row) : tableList cmd
+tableList _ = []
 
 newSelect b y z acc [(n, col, row)] x = case x of
 	NewCol m col2 _ -> if n == m && col2 <= col then (b, reverse acc ++ [(n, col + 1, row)], y, z) else (b, reverse acc ++ [(n, col, row)], y, z)
@@ -608,22 +615,14 @@ main = do
 					clrCtrl <- readIORef clrRef2
 					invalidateRect (Just clrCtrl) Nothing True
 				_ -> return ()
-	{-    setSel n m = do
-		modifyIORef text (\textVal -> setSelection n m (toZipper (clearSelection (fromZipper textVal))))
-		modifyIORef select (\(b, _, _, _) -> (b, Nothing, n, m))
-		execOnChange
-	    setSelTable n col row may m x = do
-		modifyIORef text $ \textVal -> alter n (\(Right (Left contents)) -> Right $ Left $ changeAt col (second $ changeAt row $ fromZipper . setSelection m x . toZipper) contents) (toZipper (clearSelection (fromZipper textVal)))
-		modifyIORef select (\(b, _, _, _) -> (b, may, m, x))
-		execOnChange-}
 	    performCommand2 x textVal = do
 		writeIORef text (perform x textVal)
-		doOnTables $ \_ _ setSelection _ -> case innerCommand x of
+		(_, ls, _, _) <- readIORef select
+		when (ls == tableList x) $ doOnTables $ \_ _ setSelection _ -> case innerCommand x of
 			Insert n ls -> setSelection (n + length (concatMap snd ls)) (n + length (concatMap snd ls))
 			Delete n _ -> setSelection n n
 			_ -> return ()
-		(b, ls, y, z) <- readIORef select
-		writeIORef select (newSelect b y z [] ls x)
+		modifyIORef select (\(b, ls, y, z) -> newSelect b y z [] ls x)
 	    undoCommand = do
 		(x:bef, aft) <- readIORef undo
 		textVal <- readIORef text
@@ -643,13 +642,15 @@ main = do
 		(bef, _) <- readIORef undo
 
 		-- Make it so that multiple alters of the same word are compressed into a single entry in the undo list
-		writeIORef undo (case bef of
-			Alter n _:Alter m _:_ | n == m -> tail bef
-			InTable n col row (Alter m _):InTable n2 col2 row2 (Alter m2 _):_ | n == n2 && col == col2 && row == row2 && m == m2 -> tail bef
-			_ -> bef, [])
-
+		case bef of
+			x:y:_ -> when (tableList x == tableList y) $ writeIORef undo (case (innerCommand x, innerCommand y) of
+				(Alter n _, Alter m _) | n == m -> tail bef
+				_ -> bef, [])
+			_ -> return ()
 		writeIORef changed True
-	    doOnTables0 ((n, col, row):xs) = (\textVal -> let Right (Left tbl) = obj (fst (toView textVal !! n)) in
+	    doOnTables0 ((n, col, row):xs) = (\textVal -> let
+				(_, _, _, aft, _) = goto n textVal
+				Right (Left tbl) = obj (fst (head aft)) in
 			get $ toZipper $ snd (tbl !! col) !! row,
 		\newText -> alter n (\(Right (Left contents)) -> Right $ Left $ changeAt col (second $ changeAt row $ fromZipper . put newText . toZipper) contents),
 		InTable n col row . makeCommand) where
@@ -665,7 +666,7 @@ main = do
 				liftM (goto m . get) (readIORef text))
 			(\newText -> modifyIORef text (put newText) >> execOnChange)
 			(\m x -> do
-				modifyIORef text (\textVal -> put (setSelection m x $ toZipper $ clearSelection $ fromZipper $ get textVal) textVal)
+				modifyIORef text (\textVal -> put (setSelection m x $ toZipper $ clearSelection $ fromZipper $ get textVal) $ toZipper $ clearSelection $ fromZipper textVal)
 				modifyIORef select (\(b, ls, _, _) -> (b, ls, m, x))
 				execOnChange)
 			(performCommand . makeCommand)
@@ -724,7 +725,7 @@ main = do
 		doOnTables1 init $ \get _ _ performCommand -> do
 			textVal <- get
 			performCommand $ if oneColTable (fst (toView textVal !! n)) then
-					Delete n (n + 1)
+					Delete n (n + 1) -- !!! Bug
 				else
 					DelCol n col
 	let delRow = do
@@ -918,10 +919,10 @@ main = do
 		createAButton "Newrow.bmp" (510 + 10 * 32) newRow wnd hdl 32 
 		delCol <- createAButton "Delcol.bmp" (510 + 11 * 32) delCol wnd hdl 32
 		delRow <- createAButton "Delrow.bmp" (510 + 12 * 32) delRow wnd hdl 32
-		delCol2 <- createAButton "DelcolDis.bmp" (510 + 13 * 32) (return ()) wnd hdl 32
-		delRow2 <- createAButton "DelrowDis.bmp" (510 + 14 * 32) (return ()) wnd hdl 32
-		createAButton "Print.bmp" (510 + 15 * 32) printing wnd hdl 32
-		createAButton "OLE.bmp" (510 + 16 * 32) link wnd hdl 32
+		delCol2 <- createAButton "DelcolDis.bmp" (510 + 11 * 32) (return ()) wnd hdl 32
+		delRow2 <- createAButton "DelrowDis.bmp" (510 + 12 * 32) (return ()) wnd hdl 32
+		createAButton "Print.bmp" (510 + 13 * 32) printing wnd hdl 32
+		createAButton "OLE.bmp" (510 + 14 * 32) link wnd hdl 32
 		writeIORef undoRef (undo, undo2)
 		writeIORef redoRef (redo, redo2)
 		writeIORef delColRef (delCol, delCol2)
