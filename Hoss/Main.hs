@@ -34,6 +34,7 @@ import Foreign.Ptr
 import Foreign.Storable
 import System.FilePath.Windows
 import Control.Monad.Identity
+import Spellcheck
 
 import Test.QuickCheck
 import Test.QuickCheck.Gen
@@ -55,7 +56,8 @@ data Word = Word {
 	bold :: Bool,
 	italic :: Bool,
 	underline :: Bool,
-	string :: String } deriving Eq
+	string :: String,
+	corrections :: [String] } deriving Eq
 
 type Table = [(Int32, [[Paragraph Object]])]
 
@@ -72,7 +74,7 @@ data Object = Object {
 data Command = Insert Int [Paragraph Object] | Delete Int Int | Alter Int String | InTable Int Int Int Command | NewCol Int Int (Int32, [[Paragraph Object]]) | NewRow Int Int [[Paragraph Object]] | DelCol Int Int | DelRow Int Int deriving Show
 
 instance Binary Word where
-	put (Word font size clr bold italic underline string) = do
+	put (Word font size clr bold italic underline string _) = do
 		put font
 		put size
 		put clr
@@ -88,7 +90,7 @@ instance Binary Word where
 		italic <- get
 		underline <- get
 		string <- get
-		return $ Word font size color bold italic underline string
+		return $ Word font size color bold italic underline string []
 
 instance Binary Link where
 	put (Link path _) = put path
@@ -238,15 +240,24 @@ withCells (xPos, yPos) tbl f = foldM_ (\y (rowN, row) -> do
 	(yPos + padding)
 	(zip [0..] (transpose (map snd tbl)))
 
-getCell (x, y) pr ob = case obj ob of
+getCell0 (x, y) pr ob = case obj ob of
 	Right (Left tbl) -> do
 		cell <- newIORef Nothing
 		withCells pr tbl $ \val col row x2 y2 wid ht -> when (x2 <= x && x < x2 + wid && y2 <= y && y < y2 + ht) $ maybe
 			(return ())
 			(\(x, y, (el, _)) -> writeIORef cell (Just (col, row, x2 + x, y2 + y, el)))
 			(hitTest (x - x2, y - y2) (layout wid ((0, 0), (wid, 0), 0) val))
-		liftM (maybe (Nothing, fst pr, snd pr, position ob) (\(col, row, x, y, el) -> (Just (position ob, col, row), x, y, position el))) (readIORef cell)
-	_ -> return (Nothing, fst pr, snd pr, position ob)
+		liftM (maybe (Nothing, fst pr, snd pr, ob) (\(col, row, x, y, el) -> (Just (position ob, col, row), x, y, el))) (readIORef cell)
+	_ -> return (Nothing, fst pr, snd pr, ob)
+
+getCell pr pr2 ob = do
+	(may, x, y, ob2) <- getCell0 pr pr2 ob
+	maybe
+		(return ([], x, y, ob2))
+		(\z -> do
+			(ls, x, y, ob2) <- getCell pr (x, y) ob2
+			return (z:ls, x, y, ob2))
+		may
 
 getCellEdge (x, _) pr ob = case obj ob of
 	Right (Left contents) -> findIndex (\x2 -> x2 <= x && x < x2 + 5) (tail (scanl (\x y -> x + y + 5) (fst pr) (map fst contents)))
@@ -259,7 +270,7 @@ getBitmapInfo3 bmp = case bmpBitmapInfo bmp of
 
 instance Displayable Object where
 	measure _ = (0, 0)
-	flowMeasure (Object _ _ (Left (Word font size _ bold italic underline s)) _ _ _) = unsafePerformIO $ do
+	flowMeasure (Object _ _ (Left (Word font size _ bold italic underline s _)) _ _ _) = unsafePerformIO $ do
 		dc <- getDC Nothing
 		font <- createAFont dc font size bold italic underline
 		oldFont <- selectFont dc font
@@ -271,7 +282,7 @@ instance Displayable Object where
 	flowMeasure (Object _ _ (Right (Left contents)) _ _ _) = (padding + sum (map ((+padding) . fst) contents),
 		padding + sum (map (\(col, ls) -> padding + maximum (map (measureCell (fst (contents !! col))) ls)) $ zip [0..] $ transpose $ map snd contents))
 	flowMeasure (Object _ _ (Right (Right (Link _ ob))) _ _ _) = ((fromIntegral . dib3Width) &&& (fromIntegral . dib3Height)) (getBitmapInfo3 ob)
-	draw dc (x, y) obj@(Object _ selected (Left (Word font size clr bold italic underline s)) _ _ _) = do
+	draw dc (x, y) obj@(Object _ selected (Left (Word font size clr bold italic underline s corrections)) _ _ _) = do
 		if selected == Selected then do
 				c_SetBkColor dc (rgb 0 0 0)
 				c_SetBkMode dc oPAQUE
@@ -285,6 +296,13 @@ instance Displayable Object where
 		selectFont dc oldFont
 		deleteFont font
 		drawCaret dc (x, y) obj
+		unless (cleanUpWord s `elem` corrections) $ do
+			pen <- createPen pS_SOLID 0 (rgb 255 0 0)
+			oldPen <- selectPen dc pen
+			moveToEx dc x (y + height obj)
+			lineTo dc (x + width obj) (y + height obj)
+			selectPen dc oldPen
+			deletePen pen
 	draw dc pr obj@(Object _ selected (Right (Left tbl)) _ _ _) = do
 		withCells pr tbl $ \val _ _ x y wid ht -> do
 			rectangle dc (x - 3) (y - 3) (x + wid + 3) (y + ht + 3)
@@ -444,6 +462,39 @@ oneColTable ob = null (tail contents) where
 oneRowTable ob = null (tail (snd (head contents))) where
 	Right (Left contents) = obj ob
 
+innerCommand (InTable _ _ _ cmd) = innerCommand cmd
+innerCommand cmd = cmd
+
+newSelect b y z acc [(n, col, row)] x = case x of
+	NewCol m col2 _ -> if n == m && col2 <= col then (b, reverse acc ++ [(n, col + 1, row)], y, z) else (b, reverse acc ++ [(n, col, row)], y, z)
+	NewRow m row2 _ -> if n == m && row2 <= row then (b, reverse acc ++ [(n, col, row + 1)], y, z) else (b, reverse acc ++ [(n, col, row)], y, z)
+	DelCol m col2 -> if n == m then
+			if col2 < col then
+				(b, reverse acc ++ [(n, col - 1, row)], y, z)
+			else if col2 == col then
+				(b, reverse acc, n, n)
+			else
+				(b, reverse acc ++ [(n, col, row)], y, z)
+		else
+			(b, reverse acc ++ [(n, col, row)], y, z)
+	DelRow m row2 -> if n == m then
+			if row2 < row then
+				(b, reverse acc ++ [(n, col, row - 1)], y, z)
+			else if row2 == row then
+				(b, reverse acc, n, n)
+			else
+				(b, reverse acc ++ [(n, col, row)], y, z)
+		else
+			(b, reverse acc ++ [(n, col, row)], y, z)
+	_ -> (b, reverse acc ++ [(n, col, row)], y, z)
+newSelect b y z acc (x:xs) cmd = case cmd of
+	InTable n2 col2 row2 cmd -> if (n2, col2, row2) == x then
+			newSelect b y z (x:acc) xs cmd
+		else
+			(b, reverse acc ++ x : xs, y, z)
+	_ -> (b, reverse acc ++ x : xs, y, z)
+newSelect b y z _ [] _ = (b, [], y, z)
+
 toolbarHeight = 40
 
 createAButton path x cmd wnd hdl sz = do
@@ -514,7 +565,7 @@ main = do
 	textLs <- newIORef undefined
 	text <- newIORef undefined
 	undo <- newIORef undefined
-	select <- newIORef (False, Nothing, 0, 0)
+	select <- newIORef (False, [], 0, 0)
 	drag <- newIORef Nothing
 	onChange <- newIORef undefined
 	inset <- newIORef undefined
@@ -541,9 +592,9 @@ main = do
 		delRow <- readIORef delRowRef
 		showAndHide (null bef) undo
 		showAndHide (null aft) redo
-		(_, may, _, _) <- readIORef select
-		showAndHide (isNothing may) delCol
-		showAndHide (isNothing may) delRow
+		(_, ls, _, _) <- readIORef select
+		showAndHide (null ls) delCol
+		showAndHide (null ls) delRow
 		doOnTables $ \get _ _ _ -> do
 			(_, _, _, aft, _) <- get
 			let (x, _) = head aft
@@ -557,41 +608,22 @@ main = do
 					clrCtrl <- readIORef clrRef2
 					invalidateRect (Just clrCtrl) Nothing True
 				_ -> return ()
-	    setSel n m = do
+	{-    setSel n m = do
 		modifyIORef text (\textVal -> setSelection n m (toZipper (clearSelection (fromZipper textVal))))
 		modifyIORef select (\(b, _, _, _) -> (b, Nothing, n, m))
 		execOnChange
 	    setSelTable n col row may m x = do
 		modifyIORef text $ \textVal -> alter n (\(Right (Left contents)) -> Right $ Left $ changeAt col (second $ changeAt row $ fromZipper . setSelection m x . toZipper) contents) (toZipper (clearSelection (fromZipper textVal)))
 		modifyIORef select (\(b, _, _, _) -> (b, may, m, x))
-		execOnChange
+		execOnChange-}
 	    performCommand2 x textVal = do
 		writeIORef text (perform x textVal)
-		(b, may, y, z) <- readIORef select
-		case may of
-			Just (n, col, row) -> case x of
-				NewCol m col2 _ -> when (n == m && col2 <= col) $ writeIORef select (b, Just (n, col + 1, row), y, z)
-				NewRow m row2 _ -> when (n == m && row2 <= row) $ writeIORef select (b, Just (n, col, row + 1), y, z)
-				DelCol m col2 -> when (n == m) $ if col2 < col then
-						writeIORef select (b, Just (n, col - 1, row), y, z)
-					else if col2 == col then
-						writeIORef select (b, Nothing, n, n)
-					else
-						return ()
-				DelRow m row2 -> when (n == m) $ if row2 < row then
-						writeIORef select (b, Just (n, col, row - 1), y, z)
-					else if row2 == row then
-						writeIORef select (b, Nothing, n, n)
-					else
-						return ()
-				InTable n col row (Insert m ls) -> setSelTable n col row may (m + length (concatMap snd ls)) (m + length (concatMap snd ls))
-				InTable n col row (Delete m _) -> setSelTable n col row may m m
-				Delete n _ -> setSel n n
-				_ -> return ()
-			Nothing -> case x of
-				Insert n ls -> setSel (n + length (concatMap snd ls)) (n + length (concatMap snd ls))
-				Delete n _ -> setSel n n
-				_ -> return ()
+		doOnTables $ \_ _ setSelection _ -> case innerCommand x of
+			Insert n ls -> setSelection (n + length (concatMap snd ls)) (n + length (concatMap snd ls))
+			Delete n _ -> setSelection n n
+			_ -> return ()
+		(b, ls, y, z) <- readIORef select
+		writeIORef select (newSelect b y z [] ls x)
 	    undoCommand = do
 		(x:bef, aft) <- readIORef undo
 		textVal <- readIORef text
@@ -617,22 +649,27 @@ main = do
 			_ -> bef, [])
 
 		writeIORef changed True
-	    doOnTables :: (IO (Zipper Object) -> (Zipper Object -> IO ()) -> (Int -> Int -> IO ()) -> (Command -> IO ()) -> IO t) -> IO t
-	    doOnTables f = do
-		(_, may, _, _) <- readIORef select
-		maybe
-			(f (readIORef text) (\x -> writeIORef text x >> execOnChange) setSel performCommand)
-			(\(n, col, row) -> f (do
-					textVal <- readIORef text
-					let Right (Left tbl) = obj (fst (toView textVal !! n))
-					(_, _, m, _) <- readIORef select
-					return $ goto m $ toZipper $ snd (tbl !! col) !! row)
-				(\newText -> do
-					modifyIORef text $ alter n (\(Right (Left contents)) -> Right $ Left $ changeAt col (second $ changeAt row $ const $ fromZipper newText) contents)
-					execOnChange)
-				(setSelTable n col row may)
-				(\cmd -> performCommand (InTable n col row cmd)))
-			may
+	    doOnTables0 ((n, col, row):xs) = (\textVal -> let Right (Left tbl) = obj (fst (toView textVal !! n)) in
+			get $ toZipper $ snd (tbl !! col) !! row,
+		\newText -> alter n (\(Right (Left contents)) -> Right $ Left $ changeAt col (second $ changeAt row $ fromZipper . put newText . toZipper) contents),
+		InTable n col row . makeCommand) where
+		(get, put, makeCommand) = doOnTables0 xs
+	    doOnTables0 [] = (id, const, id)
+	    doOnTables1 :: ([(Int, Int, Int)] -> [(Int, Int, Int)]) -> (IO (Zipper Object) -> (Zipper Object -> IO ()) -> (Int -> Int -> IO ()) -> (Command -> IO ()) -> IO t) -> IO t
+	    doOnTables1 f g = do
+		(_, ls, _, _) <- readIORef select
+		let (get, put, makeCommand) = doOnTables0 (f ls)
+		g
+			(do
+				(_, _, m, _) <- readIORef select
+				liftM (goto m . get) (readIORef text))
+			(\newText -> modifyIORef text (put newText) >> execOnChange)
+			(\m x -> do
+				modifyIORef text (\textVal -> put (setSelection m x $ toZipper $ clearSelection $ fromZipper $ get textVal) textVal)
+				modifyIORef select (\(b, ls, _, _) -> (b, ls, m, x))
+				execOnChange)
+			(performCommand . makeCommand)
+	    doOnTables = doOnTables1 id
 	let mousemove (x, y) pr ob = do
 		textVal <- readIORef text
 		dragVal <- readIORef drag
@@ -641,60 +678,65 @@ main = do
 				writeIORef text $ alter n (\(Right (Left contents)) -> Right $ Left $ changeAt col (first $ const $ (interval + x) `div` 10 * 10) contents) textVal
 				execOnChange
 			Nothing -> do
-				(b, may, n, _) <- readIORef select
-				(may2, xPos, yPos, m) <- getCell (x, y) pr ob
-				when (b && may == may2) $ doOnTables $ \_ _ setSelection _ -> setSelection n m
+				(b, ls, n, _) <- readIORef select
+				(ls2, xPos, yPos, ob2) <- getCell (x, y) pr ob
+				when (b && ls == ls2) $ doOnTables $ \_ _ setSelection _ -> setSelection n (position ob2)
 	let mousedown pr pr2 ob = do
 		textVal <- readIORef text
 		case getCellEdge pr pr2 ob of
 			Just i -> let Right (Left contents) = obj ob in
 				writeIORef drag $ Just (position ob, i, fst (contents !! i) - fst pr)
 			Nothing -> do
-				(may, _, _, pos) <- getCell pr pr2 ob
-				writeIORef select (True, may, pos, pos)
+				(ls, _, _, ob2) <- getCell pr pr2 ob
+				writeIORef select (True, ls, position ob2, position ob2)
 		mousemove pr pr2 ob
 	let mouseup = do
 		writeIORef drag Nothing
 		modifyIORef select (\(_, may, n, m) -> (False, may, n, m))
-	let initialObject selection = (Object 0 selection (Left $ Word "Times New Roman" 12 0 False False False "") mousedown mousemove mouseup, Inline)
+	let initialObject selection = (Object 0 selection (Left $ Word "Times New Roman" 12 0 False False False "" []) mousedown mousemove mouseup, Inline)
 	let initialParagraph selection = [(L, [initialObject selection])]
 	let newTable = do
 		textVal <- readIORef text
-		(_, may, _, m) <- readIORef select
-		maybe
-			(do
-				let ob = Object 0 Unselected (Right $ Left [(100, [initialParagraph Unselected])]) mousedown mousemove mouseup
-				performCommand $ Insert m [(L, [(ob, Inline)])])
-			(const (return ()))
-			may
+		(_, _, _, m) <- readIORef select
+		doOnTables $ \_ _ _ performCommand -> do
+			let ob = Object 0 Unselected (Right $ Left [(100, [initialParagraph Unselected])]) mousedown mousemove mouseup
+			performCommand $ Insert m [(L, [(ob, Inline)])]
 	let newCol = do
 		textVal <- readIORef text
-		(_, may, _, m) <- readIORef select
-		maybe
-			newTable
-			(\(n, col, _) -> performCommand $ NewCol n col (100, repeat (initialParagraph Unselected)))
-			may
+		(_, ls, _, _) <- readIORef select
+		let (n, col, _) = last ls
+		if null ls then
+				newTable
+			else doOnTables1 init $ \_ _ _ performCommand ->
+				performCommand $ NewCol n col (100, repeat (initialParagraph Unselected))
 	let newRow = do
 		textVal <- readIORef text
-		(_, may, _, m) <- readIORef select
-		maybe
-			newTable
-			(\(n, _, row) -> performCommand $ NewRow n row (repeat (initialParagraph Unselected)))
-			may
+		(_, ls, _, _) <- readIORef select
+		let (n, _, row) = last ls
+		if null ls then
+				newTable
+			else doOnTables1 init $ \_ _ _ performCommand ->
+				performCommand $ NewRow n row (repeat (initialParagraph Unselected))
 	let delCol = do
 		textVal <- readIORef text
-		(_, Just (n, col, _), _, _) <- readIORef select
-		performCommand $ if oneColTable (fst (toView textVal !! n)) then
-				Delete n (n + 1)
-			else
-				DelCol n col
+		(_, ls, _, _) <- readIORef select
+		let (n, col, _) = last ls
+		doOnTables1 init $ \get _ _ performCommand -> do
+			textVal <- get
+			performCommand $ if oneColTable (fst (toView textVal !! n)) then
+					Delete n (n + 1)
+				else
+					DelCol n col
 	let delRow = do
 		textVal <- readIORef text
-		(_, Just (n, _, row), _, _) <- readIORef select
-		performCommand $ if oneRowTable (fst (toView textVal !! n)) then
-				Delete n (n + 1)
-			else
-				DelRow n row
+		(_, ls, _, _) <- readIORef select
+		let (n, _, row) = last ls
+		doOnTables1 init $ \get _ _ performCommand -> do
+			textVal <- get
+			performCommand $ if oneColTable (fst (toView textVal !! n)) then
+					Delete n (n + 1)
+				else
+					DelCol n row
 	let doSave wnd = fileSave wnd filt "hos" >>= maybe
 		(return False)
 		(\path -> do
@@ -721,6 +763,11 @@ main = do
 				m
 	let loadBitmap path = catch (liftM (either (const missing) id) $ readBMP path) (\(_ :: SomeException) -> return missing)
 	let realize = doOnAll (\(ob, flt) -> case obj ob of
+		Left wrd -> if null (string wrd) then
+				return (ob, flt)
+			else do
+				words <- spellcheck (cleanUpWord (string wrd))
+				return (ob { obj = Left (wrd { corrections = words }) }, flt)
 		Right (Right (Link path _)) -> do
 			bmp <- loadBitmap path
 			return (ob { obj = Right $ Right $ Link path bmp }, flt)
@@ -865,15 +912,16 @@ main = do
 		undo <- createAButton "Undo.bmp" (510 + 6 * 32) undoCommand wnd hdl 32
 		redo <- createAButton "Redo.bmp" (510 + 7 * 32) redoCommand wnd hdl 32
 		undo2 <- createAButton "UndoDis.bmp" (510 + 6 * 32) (return ()) wnd hdl 32
-		redo2 <- createAButton "RedoDis.bmp" (510 + 7 * 32) (return ()) wnd hdl 32 
-		createAButton "Newcol.bmp" (510 + 8 * 32) newCol wnd hdl 32
-		createAButton "Newrow.bmp" (510 + 9 * 32) newRow wnd hdl 32 
-		delCol <- createAButton "Delcol.bmp" (510 + 10 * 32) delCol wnd hdl 32
-		delRow <- createAButton "Delrow.bmp" (510 + 11 * 32) delRow wnd hdl 32
-		delCol2 <- createAButton "DelcolDis.bmp" (510 + 10 * 32) (return ()) wnd hdl 32
-		delRow2 <- createAButton "DelrowDis.bmp" (510 + 11 * 32) (return ()) wnd hdl 32
-		createAButton "Print.bmp" (510 + 12 * 32) printing wnd hdl 32
-		createAButton "OLE.bmp" (510 + 13 * 32) link wnd hdl 32
+		redo2 <- createAButton "RedoDis.bmp" (510 + 7 * 32) (return ()) wnd hdl 32
+		createAButton "Newtable.bmp" (510 + 8 * 32) newTable wnd hdl 32
+		createAButton "Newcol.bmp" (510 + 9 * 32) newCol wnd hdl 32
+		createAButton "Newrow.bmp" (510 + 10 * 32) newRow wnd hdl 32 
+		delCol <- createAButton "Delcol.bmp" (510 + 11 * 32) delCol wnd hdl 32
+		delRow <- createAButton "Delrow.bmp" (510 + 12 * 32) delRow wnd hdl 32
+		delCol2 <- createAButton "DelcolDis.bmp" (510 + 13 * 32) (return ()) wnd hdl 32
+		delRow2 <- createAButton "DelrowDis.bmp" (510 + 14 * 32) (return ()) wnd hdl 32
+		createAButton "Print.bmp" (510 + 15 * 32) printing wnd hdl 32
+		createAButton "OLE.bmp" (510 + 16 * 32) link wnd hdl 32
 		writeIORef undoRef (undo, undo2)
 		writeIORef redoRef (redo, redo2)
 		writeIORef delColRef (delCol, delCol2)
@@ -943,7 +991,7 @@ instance Eq Object where
 instance Show Object where
 	show x = "Object " ++ show (position x) ++ " " ++ show (selection x) ++ " " ++ show (obj x) ++ " _ _ _"
 
-makeWord s = Word "" 0 0 False False False s
+makeWord s = Word "" 0 0 False False False s []
 
 makeObject sel s = Object undefined sel (Left (makeWord s)) undefined undefined undefined 
 
