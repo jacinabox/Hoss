@@ -34,7 +34,6 @@ import Foreign.Ptr
 import Foreign.Storable
 import System.FilePath.Windows
 import Control.Monad.Identity
-import Spellcheck
 
 import Test.QuickCheck
 import Test.QuickCheck.Gen
@@ -56,8 +55,7 @@ data Word = Word {
 	bold :: Bool,
 	italic :: Bool,
 	underline :: Bool,
-	string :: String,
-	corrections :: [String] } deriving Eq
+	string :: String } deriving Eq
 
 type Table = [(Int32, [[Paragraph Object]])]
 
@@ -74,7 +72,7 @@ data Object = Object {
 data Command = Insert Int [Paragraph Object] | Delete Int Int | Alter Int String | InTable Int Int Int Command | NewCol Int Int (Int32, [[Paragraph Object]]) | NewRow Int Int [[Paragraph Object]] | DelCol Int Int | DelRow Int Int deriving Show
 
 instance Binary Word where
-	put (Word font size clr bold italic underline string _) = do
+	put (Word font size clr bold italic underline string) = do
 		put font
 		put size
 		put clr
@@ -90,7 +88,7 @@ instance Binary Word where
 		italic <- get
 		underline <- get
 		string <- get
-		return $ Word font size color bold italic underline string []
+		return $ Word font size color bold italic underline string
 
 instance Binary Link where
 	put (Link path _) = put path
@@ -271,7 +269,7 @@ getBitmapInfo3 bmp = case bmpBitmapInfo bmp of
 
 instance Displayable Object where
 	measure _ = (0, 0)
-	flowMeasure (Object _ _ (Left (Word font size _ bold italic underline s _)) _ _ _) = unsafePerformIO $ do
+	flowMeasure (Object _ _ (Left (Word font size _ bold italic underline s)) _ _ _) = unsafePerformIO $ do
 		dc <- getDC Nothing
 		font <- createAFont dc font size bold italic underline
 		oldFont <- selectFont dc font
@@ -283,7 +281,7 @@ instance Displayable Object where
 	flowMeasure (Object _ _ (Right (Left contents)) _ _ _) = (padding + sum (map ((+padding) . fst) contents),
 		padding + sum (map (\(col, ls) -> padding + maximum (map (measureCell (fst (contents !! col))) ls)) $ zip [0..] $ transpose $ map snd contents))
 	flowMeasure (Object _ _ (Right (Right (Link _ ob))) _ _ _) = ((fromIntegral . dib3Width) &&& (fromIntegral . dib3Height)) (getBitmapInfo3 ob)
-	draw dc (x, y) obj@(Object _ selected (Left (Word font size clr bold italic underline s corrections)) _ _ _) = do
+	draw dc (x, y) obj@(Object _ selected (Left (Word font size clr bold italic underline s)) _ _ _) = do
 		if selected == Selected then do
 				c_SetBkColor dc (rgb 0 0 0)
 				c_SetBkMode dc oPAQUE
@@ -297,13 +295,6 @@ instance Displayable Object where
 		selectFont dc oldFont
 		deleteFont font
 		drawCaret dc (x, y) obj
-		unless (cleanUpWord s `elem` corrections) $ do
-			pen <- createPen pS_SOLID 0 (rgb 255 0 0)
-			oldPen <- selectPen dc pen
-			moveToEx dc x (y + height obj)
-			lineTo dc (x + width obj) (y + height obj)
-			selectPen dc oldPen
-			deletePen pen
 	draw dc pr obj@(Object _ selected (Right (Left tbl)) _ _ _) = do
 		withCells pr tbl $ \val _ _ x y wid ht -> do
 			rectangle dc (x - 3) (y - 3) (x + wid + 3) (y + ht + 3)
@@ -427,7 +418,7 @@ funOnWord _ ob = ob
 isLeft (Left _) = True
 isLeft _ = False
 
-findWord (_, _, bef, aft, _) = fromJust $ find (isLeft . obj . fst) (headI aft : bef)
+findWord (_, _, bef, aft, _) = fromJust $ find (isLeft . obj . fst) (bef ++ aft)
 
 setCaret location zip = doOnHead (\ob -> ob { selection = Caret }) (goto location zip)
 
@@ -466,41 +457,24 @@ oneColTable ob = null (tail contents) where
 oneRowTable ob = null (tail (snd (head contents))) where
 	Right (Left contents) = obj ob
 
-innerCommand (InTable _ _ _ cmd) = innerCommand cmd
-innerCommand cmd = cmd
-
 tableList (InTable n col row cmd) = (n, col, row) : tableList cmd
 tableList _ = []
 
-newSelect b y z acc [(n, col, row)] x = case x of
-	NewCol m col2 _ -> if n == m && col2 <= col then (b, reverse acc ++ [(n, col + 1, row)], y, z) else (b, reverse acc ++ [(n, col, row)], y, z)
-	NewRow m row2 _ -> if n == m && row2 <= row then (b, reverse acc ++ [(n, col, row + 1)], y, z) else (b, reverse acc ++ [(n, col, row)], y, z)
-	DelCol m col2 -> if n == m then
-			if col2 < col then
-				(b, reverse acc ++ [(n, col - 1, row)], y, z)
-			else if col2 == col then
-				(b, reverse acc, n, n)
-			else
-				(b, reverse acc ++ [(n, col, row)], y, z)
-		else
-			(b, reverse acc ++ [(n, col, row)], y, z)
-	DelRow m row2 -> if n == m then
-			if row2 < row then
-				(b, reverse acc ++ [(n, col, row - 1)], y, z)
-			else if row2 == row then
-				(b, reverse acc, n, n)
-			else
-				(b, reverse acc ++ [(n, col, row)], y, z)
-		else
-			(b, reverse acc ++ [(n, col, row)], y, z)
-	_ -> (b, reverse acc ++ [(n, col, row)], y, z)
-newSelect b y z acc (x:xs) cmd = case cmd of
-	InTable n2 col2 row2 cmd -> if (n2, col2, row2) == x then
-			newSelect b y z (x:acc) xs cmd
-		else
-			(b, reverse acc ++ x : xs, y, z)
-	_ -> (b, reverse acc ++ x : xs, y, z)
-newSelect b y z _ [] _ = (b, [], y, z)
+innerCommand (InTable _ _ _ cmd) = innerCommand cmd
+innerCommand cmd = cmd
+
+findSelection0 ((x, _):xs) = case obj x of
+		Right (Left tbl) -> foldr mplus mzero $ concat $ zipWith (\(_, col) colN -> zipWith (\cell row -> do
+			(ls, y, z) <- findSelection0 $ toView0 cell
+			return ((position x, colN, row):ls, y, z)) col [0..]) tbl [0..]
+		_ -> Nothing
+	`mplus` case selection x of
+		Selected -> Just ([], position x, position $ fst $ fromJust $ find ((==Unselected) . selection . fst) xs)
+		Caret -> Just ([], position x, position x)
+		Unselected -> findSelection0 xs
+findSelection0 [] = Nothing
+
+findSelection = maybe ([], 0, 0) id . findSelection0
 
 toolbarHeight = 40
 
@@ -526,7 +500,7 @@ insetProc format fontRef sizeRef clrRef mousedown mousemove mouseup wnd msg wPar
 		textVal@(_, _, bef, aft, aftBig) <- get
 		if n /= m then
 			if wParam == vK_BACK || wParam == vK_DELETE then do
-					performCommand (if m < n then Delete m n else Delete n m)
+					performCommand (Delete n m)
 				else
 					return ()
 			else
@@ -571,9 +545,9 @@ showAndHide b (ctrl, ctrl2) = do
 main = do
 	textLs <- newIORef undefined
 	text <- newIORef undefined
+	select <- newIORef Nothing
 	undo <- newIORef undefined
-	select <- newIORef (False, [], 0, 0)
-	drag <- newIORef Nothing
+	drag <- newIORef undefined
 	onChange <- newIORef undefined
 	inset <- newIORef undefined
 	fontRef <- newIORef undefined
@@ -599,10 +573,10 @@ main = do
 		delRow <- readIORef delRowRef
 		showAndHide (null bef) undo
 		showAndHide (null aft) redo
-		(_, ls, _, _) <- readIORef select
+		let (ls, _, _) = findSelection (toView textVal)
 		showAndHide (null ls) delCol
 		showAndHide (null ls) delRow
-		doOnTables $ \get _ _ _ -> do
+		doOnTables ls $ \get _ _ _ -> do
 			(_, _, _, aft, _) <- get
 			let (x, _) = head aft
 			case obj x of
@@ -617,12 +591,13 @@ main = do
 				_ -> return ()
 	    performCommand2 x textVal = do
 		writeIORef text (perform x textVal)
-		(_, ls, _, _) <- readIORef select
-		when (ls == tableList x) $ doOnTables $ \_ _ setSelection _ -> case innerCommand x of
+		writeIORef drag Nothing
+		writeIORef select Nothing
+		let (ls, _, _) = findSelection (toView textVal)
+		when (ls == tableList x) $ doOnTables ls $ \_ _ setSelection _ -> case innerCommand x of
 			Insert n ls -> setSelection (n + length (concatMap snd ls)) (n + length (concatMap snd ls))
 			Delete n _ -> setSelection n n
 			_ -> return ()
-		modifyIORef select (\(b, ls, y, z) -> newSelect b y z [] ls x)
 	    undoCommand = do
 		(x:bef, aft) <- readIORef undo
 		textVal <- readIORef text
@@ -656,83 +631,84 @@ main = do
 		InTable n col row . makeCommand) where
 		(get, put, makeCommand) = doOnTables0 xs
 	    doOnTables0 [] = (id, const, id)
-	    doOnTables1 :: ([(Int, Int, Int)] -> [(Int, Int, Int)]) -> (IO (Zipper Object) -> (Zipper Object -> IO ()) -> (Int -> Int -> IO ()) -> (Command -> IO ()) -> IO t) -> IO t
-	    doOnTables1 f g = do
-		(_, ls, _, _) <- readIORef select
+	    doOnTables1 :: [(Int, Int, Int)] -> ([(Int, Int, Int)] -> [(Int, Int, Int)]) -> (IO (Zipper Object) -> (Zipper Object -> IO ()) -> (Int -> Int -> IO ()) -> (Command -> IO ()) -> IO t) -> IO t
+	    doOnTables1 ls f g = do
 		let (get, put, makeCommand) = doOnTables0 (f ls)
 		g
 			(do
-				(_, _, m, _) <- readIORef select
-				liftM (goto m . get) (readIORef text))
+				textVal <- readIORef text
+				let (_, m, _) = findSelection (toView textVal)
+				return $ goto m $ get textVal)
 			(\newText -> modifyIORef text (put newText) >> execOnChange)
 			(\m x -> do
 				modifyIORef text (\textVal -> put (setSelection m x $ toZipper $ clearSelection $ fromZipper $ get textVal) $ toZipper $ clearSelection $ fromZipper textVal)
-				modifyIORef select (\(b, ls, _, _) -> (b, ls, m, x))
 				execOnChange)
 			(performCommand . makeCommand)
-	    doOnTables = doOnTables1 id
+	    doOnTables ls = doOnTables1 ls id
 	let mousemove (x, y) pr ob = do
 		textVal <- readIORef text
 		dragVal <- readIORef drag
 		case dragVal of
-			Just (n, col, interval) -> do
-				writeIORef text $ alter n (\(Right (Left contents)) -> Right $ Left $ changeAt col (first $ const $ (interval + x) `div` 10 * 10) contents) textVal
-				execOnChange
+			Just (ls, n, col, interval) -> doOnTables1 ls id $ \get put _ _ -> liftM (alter n (\(Right (Left contents)) -> Right $ Left $ changeAt col (first $ const $ (interval + x) `div` 10 * 10) contents)) get >>= put
 			Nothing -> do
-				(b, ls, n, _) <- readIORef select
-				(ls2, xPos, yPos, ob2) <- getCell (x, y) pr ob
-				when (b && ls == ls2) $ doOnTables $ \_ _ setSelection _ -> setSelection n (position ob2)
+				may <- readIORef select
+				(ls, xPos, yPos, ob2) <- getCell (x, y) pr ob
+				maybe
+					(return ())
+					(\(ls2, n, _) -> when (ls == ls2) $ doOnTables ls $ \_ _ setSelection _ -> setSelection n (position ob2))
+					may
 	let mousedown pr pr2 ob = do
 		textVal <- readIORef text
-		case getCellEdge pr pr2 ob of
-			Just i -> let Right (Left contents) = obj ob in
-				writeIORef drag $ Just (position ob, i, fst (contents !! i) - fst pr)
+		(ls, x, y, ob2) <- getCell pr pr2 ob
+		case getCellEdge pr (x, y) ob2 of
+			Just i -> let Right (Left contents) = obj ob2 in
+				writeIORef drag $ Just (ls, position ob2, i, fst (contents !! i) - fst pr)
 			Nothing -> do
 				(ls, _, _, ob2) <- getCell pr pr2 ob
-				writeIORef select (True, ls, position ob2, position ob2)
+				writeIORef select $ Just (ls, position ob2, position ob2)
 		mousemove pr pr2 ob
 	let mouseup = do
 		writeIORef drag Nothing
-		modifyIORef select (\(_, may, n, m) -> (False, may, n, m))
-	let initialObject selection = (Object 0 selection (Left $ Word "Times New Roman" 12 0 False False False "" []) mousedown mousemove mouseup, Inline)
+		writeIORef select Nothing
+	let initialObject selection = (Object 0 selection (Left $ Word "Times New Roman" 12 0 False False False "") mousedown mousemove mouseup, Inline)
 	let initialParagraph selection = [(L, [initialObject selection])]
 	let newTable = do
 		textVal <- readIORef text
-		(_, _, _, m) <- readIORef select
-		doOnTables $ \_ _ _ performCommand -> do
+		let (ls, _, m) = findSelection (toView textVal)
+		doOnTables ls $ \_ _ _ performCommand -> do
 			let ob = Object 0 Unselected (Right $ Left [(100, [initialParagraph Unselected])]) mousedown mousemove mouseup
 			performCommand $ Insert m [(L, [(ob, Inline)])]
 	let newCol = do
 		textVal <- readIORef text
-		(_, ls, _, _) <- readIORef select
+		let (ls, _, _) = findSelection (toView textVal)
 		let (n, col, _) = last ls
 		if null ls then
 				newTable
-			else doOnTables1 init $ \_ _ _ performCommand ->
+			else doOnTables1 ls init $ \_ _ _ performCommand ->
 				performCommand $ NewCol n col (100, repeat (initialParagraph Unselected))
 	let newRow = do
 		textVal <- readIORef text
-		(_, ls, _, _) <- readIORef select
+		let (ls, _, _) = findSelection (toView textVal)
 		let (n, _, row) = last ls
 		if null ls then
 				newTable
-			else doOnTables1 init $ \_ _ _ performCommand ->
+			else doOnTables1 ls init $ \_ _ _ performCommand ->
 				performCommand $ NewRow n row (repeat (initialParagraph Unselected))
 	let delCol = do
 		textVal <- readIORef text
-		(_, ls, _, _) <- readIORef select
+		let (ls, _, _) = findSelection (toView textVal)
 		let (n, col, _) = last ls
-		doOnTables1 init $ \get _ _ performCommand -> do
+		doOnTables1 ls init $ \get _ _ performCommand -> do
 			textVal <- get
 			performCommand $ if oneColTable (fst (toView textVal !! n)) then
-					Delete n (n + 1) -- !!! Bug
+					Delete n (n + 1)
 				else
 					DelCol n col
 	let delRow = do
 		textVal <- readIORef text
-		(_, ls, _, _) <- readIORef select
+		let (ls, _, _) = findSelection (toView textVal)
 		let (n, _, row) = last ls
-		doOnTables1 init $ \get _ _ performCommand -> do
+		doOnTables1 ls init $ \get _ _ performCommand -> do
 			textVal <- get
 			performCommand $ if oneColTable (fst (toView textVal !! n)) then
 					Delete n (n + 1)
@@ -764,11 +740,6 @@ main = do
 				m
 	let loadBitmap path = catch (liftM (either (const missing) id) $ readBMP path) (\(_ :: SomeException) -> return missing)
 	let realize = doOnAll (\(ob, flt) -> case obj ob of
-		Left wrd -> if null (string wrd) then
-				return (ob, flt)
-			else do
-				words <- spellcheck (cleanUpWord (string wrd))
-				return (ob { obj = Left (wrd { corrections = words }) }, flt)
 		Right (Right (Link path _)) -> do
 			bmp <- loadBitmap path
 			return (ob { obj = Right $ Right $ Link path bmp }, flt)
@@ -783,17 +754,22 @@ main = do
 				_ -> x) $ toView0 textVal
 			writeIORef text $ renumber $ toZipper realized
 			writeIORef undo undoVal
+			writeIORef drag Nothing
+			writeIORef select Nothing
 			writeIORef changed False
 			setWindowText wnd $ "Hoss - " ++ path
 			execOnChange)
 	let newFile wnd = promptForSave wnd $ do
 		writeIORef text ([], L, [], [initialObject Caret], [])
 		writeIORef undo ([], [])
+		writeIORef drag Nothing
+		writeIORef select Nothing
 		writeIORef changed False
 		execOnChange
 	let copy = do
-		(_, may, n, m) <- readIORef select
-		doOnTables $ \get _ _ _ -> do
+		textVal <- readIORef text
+		let (ls, n, m) = findSelection (toView textVal)
+		doOnTables ls $ \get _ _ _ -> do
 			textVal <- get
 			let bytestring = SB.pack $ LB.unpack $ encode $ let Insert _ ls = invertDelete n m textVal in ls
 			hdl <- globalAlloc gMEM_MOVEABLE (fromIntegral (SB.length bytestring) + 4)
@@ -806,13 +782,15 @@ main = do
 			setClipboardData format hdl
 			closeClipboard
 	let cut = do
-		(_, _, n, m) <- readIORef select
-		doOnTables $ \_ _ _ performCommand -> do
+		textVal <- readIORef text
+		let (ls, n, m) = findSelection (toView textVal)
+		doOnTables ls $ \_ _ _ performCommand -> do
 			copy
 			performCommand (if m < n then Delete m n else Delete n m)
 	let paste = do
-		(_, _, _, n) <- readIORef select
-		doOnTables $ \get _ _ performCommand -> do
+		textVal <- readIORef text
+		let (ls, n, _) = findSelection (toView textVal)
+		doOnTables ls $ \get _ _ performCommand -> do
 			textVal <- get
 			insetWnd <- readIORef inset
 			openClipboard insetWnd
@@ -829,14 +807,21 @@ main = do
 				closeClipboard)
 				(\(_ :: SomeException) -> return ())
 	let setJustification just = do
-		(_, may, n, m) <- readIORef select
-		doOnTables $ \get put _ _ -> do
+		textVal <- readIORef text
+		let (ls, n, m) = findSelection (toView textVal)
+		doOnTables ls $ \get put _ _ -> do
 			textVal <- get
 			put $ setJustif just n m textVal
-	let setFloated flt' = doOnTables $ \get put _ _ -> do
+	let setFloated flt' = do
+		textVal <- readIORef text
+		let (ls, _, _) = findSelection (toView textVal)
+		doOnTables ls $ \get put _ _ -> do
 			textVal <- get
 			put $ fromView textVal $ map (\(x, flt) -> (x, if not (isLeft (obj x)) && selection x == Selected then flt' else flt)) (toView textVal)
-	let setStyle hasStyle setStyle = doOnTables $ \get put _ _ -> do
+	let setStyle hasStyle setStyle = do
+		textVal <- readIORef text
+		let (ls, _, _) = findSelection (toView textVal)
+		doOnTables ls $ \get put _ _ -> do
 			textVal <- get
 			let hasIt = all (\(x, _) -> selection x == Unselected || case obj x of
 				Left wrd -> hasStyle wrd
@@ -857,10 +842,11 @@ main = do
 		(\(_ :: SomeException) -> return ())
 	let link = do
 		insetWnd <- readIORef inset
+		textVal <- readIORef text
+		let (ls, n, _) = findSelection (toView textVal)
 		fileOpen insetWnd "Bitmaps (*.bmp)\0*.bmp\0" "bmp" >>= maybe
 			(return ())
-			(\path -> doOnTables $ \_ _ _ performCommand -> do
-				(_, _, n, _) <- readIORef select
+				(\path -> doOnTables ls $ \_ _ _ performCommand -> do
 				bmp <- loadBitmap path
 				performCommand (Insert n [(L, [(Object 0 Unselected (Right $ Right $ Link path bmp) mousedown mousemove mouseup, Inline)])]))
 	let initControls wnd hdl = do
@@ -933,8 +919,8 @@ main = do
 			let name = mkClassName "Frame"
 			insetWnd <- createWindow name "" (wS_VISIBLE .|. wS_CHILD .|. wS_TABSTOP) Nothing Nothing Nothing Nothing (Just wnd) Nothing hdl (\wnd msg wParam lParam -> do
 				textVal <- readIORef text
-				(_, _, n, m) <- readIORef select
-				doOnTables (insetProc format fontRef sizeRef clrRef mousedown mousemove mouseup wnd msg wParam lParam n m))
+				let (ls, n, m) = findSelection (toView textVal)
+				doOnTables ls (insetProc format fontRef sizeRef clrRef mousedown mousemove mouseup wnd msg wParam lParam n m))
 			writeIORef inset insetWnd
 			proc <- attachLayout textLs insetWnd
 			writeIORef onChange proc
@@ -946,8 +932,8 @@ main = do
 			focus <- getFocus
 			insetWnd <- readIORef inset
 			textVal <- readIORef text
-			(_, _, n, m) <- readIORef select
-			when (loWord wParam == iDOK) $ doOnTables $ \get put _ performCommand -> do
+			let (ls, n, m) = findSelection (toView textVal)
+			when (loWord wParam == iDOK) $ doOnTables ls $ \get put _ performCommand -> do
 				textVal <- get
 				if focus == Just insetWnd then
 						performCommand (enterKey (goto n textVal))
@@ -992,7 +978,7 @@ instance Eq Object where
 instance Show Object where
 	show x = "Object " ++ show (position x) ++ " " ++ show (selection x) ++ " " ++ show (obj x) ++ " _ _ _"
 
-makeWord s = Word "" 0 0 False False False s []
+makeWord s = Word "" 0 0 False False False s
 
 makeObject sel s = Object undefined sel (Left (makeWord s)) undefined undefined undefined 
 
@@ -1111,17 +1097,11 @@ validCommand (NewRow n m _) textVal = n < position (fst (last (toView0 textVal))
 	Right (Left contents) -> length (snd (head contents)) > m
 	_ -> False
 
-{-invariantPreserving cmd textVal = not (null textVal) ==> validCommand cmd (conformToInvariant textVal) ==> invariant (perform cmd (conformToInvariant textVal))
-
-inverseValid cmd textVal = not (null textVal) ==> validCommand cmd (conformToInvariant textVal) ==> validCommand (invert cmd (conformToInvariant textVal)) (perform cmd (conformToInvariant textVal))-}
-
 theForwards cmd textVal = perform cmd (toZipper (conformToInvariant textVal))
 
 theInverse cmd textVal = perform (invert cmd (toZipper (conformToInvariant textVal))) (theForwards cmd textVal)
 
 inverse cmd textVal = not (null textVal) ==> validCommand cmd (conformToInvariant textVal) ==> fromZipper (theInverse cmd textVal) == conformToInvariant textVal
-
--- inverse2 cmd textVal = not (null textVal) ==> validCommand cmd (conformToInvariant textVal) ==> invert (invert cmd (conformToInvariant textVal)) (theForwards cmd textVal) == cmd
 
 overlapping (x1, y1, x2, y2) (x3, y3, x4, y4) = (x1 <= x3 && x3 < x2 || x1 < x4 && x4 <= x2) && (y1 <= y3 && y3 < y2 || y1 < y4 && y4 <= y2)
 
