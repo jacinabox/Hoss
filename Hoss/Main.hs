@@ -42,7 +42,7 @@ import System.Random
 -- Invariants: Each paragraph ends with a word containing the empty string.
 -- Every other word starts with a space. At least one element in the document
 -- should have either a caret or selection. There should be only one caret.
--- The aft parameter of each zipper should have an element.
+-- The caret or selection should be at the head of aft.
 
 type Zipper t = ([Paragraph t], Just, [(t, Floated)], [(t, Floated)], [Paragraph t])
 
