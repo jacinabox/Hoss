@@ -192,8 +192,8 @@ invert (Alter n _) textVal = Alter n (let Left wrd = obj (fst (headI bef)) in st
 invert (InTable n col row cmd) textVal = InTable n col row $ invert cmd $ toZipper $ snd ((let Right (Left tbl) = obj (fst (toView textVal !! n)) in tbl) !! col) !! row
 invert (NewCol n m _) _ = DelCol n m
 invert (NewRow n m _) _ = DelRow n m
-invert (DelCol n m) textVal = NewCol n m $ let Right (Left contents) = obj (fst (toView textVal !! n)) in second (map clearSelection) $ contents !! m
-invert (DelRow n m) textVal = NewRow n m $ let Right (Left contents) = obj (fst (toView textVal !! n)) in map clearSelection $ transpose (map snd contents) !! m
+invert (DelCol n m) textVal = NewCol n m $ let Right (Left contents) = obj (fst (toView textVal !! n)) in second (map clearSelection0) $ contents !! m
+invert (DelRow n m) textVal = NewRow n m $ let Right (Left contents) = obj (fst (toView textVal !! n)) in map clearSelection0 $ transpose (map snd contents) !! m
 
 perform (Insert n ls) textVal = renumber $ insert ls (goto n textVal)
 perform (Delete n m) textVal = renumber $ delete m (goto n textVal)
@@ -408,8 +408,6 @@ doOnAll0 f g = mapM (\(x, flt) -> case obj x of
 
 doOnAll f = doOnAll0 (\ls -> liftM (fromView0 ls) $ doOnAll f $ toView0 ls) f
 
-clearSelection ls = fromView0 ls $ runIdentity $ doOnAll (\(x, flt) -> return (x { selection = Unselected }, flt)) $ toView0 ls
-
 enterKey zip@(_, just, _, aft, _) = Insert (position (fst (headE aft))) [(L, [(funOnWord (\x -> x { string = "" }) $ fst $ findWord zip, Inline)]), (just, [])]
 
 funOnWord f (Object a b (Left wrd) c d e) = Object a b (Left (f wrd)) c d e
@@ -422,18 +420,26 @@ findWord (_, _, bef, aft, _) = fromJust $ find (isLeft . obj . fst) (bef ++ aft)
 
 setCaret location zip = doOnHead (\ob -> ob { selection = Caret }) (goto location zip)
 
-setSelection0 n m zip = sel (goto (m - 1) zip) where
+setSelection0 n m selState zip = sel (goto (m - 1) zip) where
 	sel zip@(_, _, _, aft, _) = (if position (fst (head aft)) <= n then
 			id
 		else
-			sel . backwards) $ doOnHead (\x -> x { selection = Selected }) zip
+			sel . backwards) $ doOnHead (\x -> x { selection = selState }) zip
 
 setSelection n m = if n == m then
 		setCaret n
 	else if n > m then
-		setSelection0 m n
+		setSelection0 m n Selected
 	else
-		setSelection0 n m
+		setSelection0 n m Selected
+
+clearSelection0 ls = fromView0 ls $ runIdentity $ doOnAll (\(x, flt) -> return (x { selection = Unselected }, flt)) $ toView0 ls
+
+clearSelection textVal = (if null ls then setSelection0 n (m + 1) Unselected else id)
+	$ doOnHead (\x -> case obj x of
+		Right (Left tbl) -> x { obj = Right $ Left $ map (second $ map clearSelection0) tbl }
+		_ -> x) textVal where
+	(ls, n, m) = findSelection textVal
 
 setJustif just n m zip = justif (goto n zip) where
 	justif zip@(befBig, _, bef, aft, aftBig) = (if m <= position (fst (head aft)) then
@@ -631,10 +637,10 @@ main = do
 		InTable n col row . makeCommand) where
 		(get, put, makeCommand) = doOnTables0 xs
 	    doOnTables0 [] = (id, const, id)
-	    doOnTables1 :: [(Int, Int, Int)] -> ([(Int, Int, Int)] -> [(Int, Int, Int)]) -> (IO (Zipper Object) -> (Zipper Object -> IO ()) -> (Int -> Int -> IO ()) -> (Command -> IO ()) -> IO t) -> IO t
-	    doOnTables1 ls f g = do
-		let (get, put, makeCommand) = doOnTables0 (f ls)
-		g
+	    doOnTables :: [(Int, Int, Int)] -> (IO (Zipper Object) -> (Zipper Object -> IO ()) -> (Int -> Int -> IO ()) -> (Command -> IO ()) -> IO t) -> IO t
+	    doOnTables ls f = do
+		let (get, put, makeCommand) = doOnTables0 ls
+		f
 			(do
 				textVal <- readIORef text
 				let gotten = get textVal
@@ -642,15 +648,14 @@ main = do
 				return $ goto m gotten)
 			(\newText -> modifyIORef text (put newText) >> execOnChange)
 			(\m x -> do
-				modifyIORef text (\textVal -> put (setSelection m x $ toZipper $ clearSelection $ fromZipper $ get textVal) $ toZipper $ clearSelection $ fromZipper textVal)
+				modifyIORef text $ \textVal -> put (setSelection m x $ clearSelection $ get textVal) $ clearSelection textVal
 				execOnChange)
 			(performCommand . makeCommand)
-	    doOnTables ls = doOnTables1 ls id
 	let mousemove (x, y) pr ob = do
 		textVal <- readIORef text
 		dragVal <- readIORef drag
 		case dragVal of
-			Just (ls, n, col, interval) -> doOnTables1 ls id $ \get put _ _ -> liftM (alter n (\(Right (Left contents)) -> Right $ Left $ changeAt col (first $ const $ (interval + x) `div` 10 * 10) contents)) get >>= put
+			Just (ls, n, col, interval) -> doOnTables ls $ \get put _ _ -> liftM (alter n (\(Right (Left contents)) -> Right $ Left $ changeAt col (first $ const $ (interval + x) `div` 10 * 10) contents)) get >>= put
 			Nothing -> do
 				may <- readIORef select
 				(ls, xPos, yPos, ob2) <- getCell (x, y) pr ob
@@ -685,7 +690,7 @@ main = do
 		let (n, col, _) = last ls
 		if null ls then
 				newTable
-			else doOnTables1 ls init $ \_ _ _ performCommand ->
+			else doOnTables (init ls) $ \_ _ _ performCommand ->
 				performCommand $ NewCol n col (100, repeat (initialParagraph Unselected))
 	let newRow = do
 		textVal <- readIORef text
@@ -693,13 +698,13 @@ main = do
 		let (n, _, row) = last ls
 		if null ls then
 				newTable
-			else doOnTables1 ls init $ \_ _ _ performCommand ->
+			else doOnTables (init ls) $ \_ _ _ performCommand ->
 				performCommand $ NewRow n row (repeat (initialParagraph Unselected))
 	let delCol = do
 		textVal <- readIORef text
 		let (ls, _, _) = findSelection textVal
 		let (n, col, _) = last ls
-		doOnTables1 ls init $ \get _ _ performCommand -> do
+		doOnTables (init ls) $ \get _ _ performCommand -> do
 			textVal <- get
 			performCommand $ if oneColTable (fst (toView textVal !! n)) then
 					Delete n (n + 1)
@@ -709,7 +714,7 @@ main = do
 		textVal <- readIORef text
 		let (ls, _, _) = findSelection textVal
 		let (n, _, row) = last ls
-		doOnTables1 ls init $ \get _ _ performCommand -> do
+		doOnTables (init ls) $ \get _ _ performCommand -> do
 			textVal <- get
 			performCommand $ if oneColTable (fst (toView textVal !! n)) then
 					Delete n (n + 1)
@@ -839,7 +844,7 @@ main = do
 				endPage printerDC
 				let (_, _, (el, _)) = last cutoff
 				return $ delete (position el + 1) textVal)
-			$ toZipper $ clearSelection $ fromZipper textVal)
+			$ toZipper $ clearSelection0 $ fromZipper textVal)
 		(\(_ :: SomeException) -> return ())
 	let link = do
 		insetWnd <- readIORef inset
