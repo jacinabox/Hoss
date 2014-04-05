@@ -362,7 +362,7 @@ renumber (befBig, just, bef, aft, aftBig) = (befBig, just, reverse bef', aft', a
 alterBef n f zip = (befBig, just, first (\x -> x { obj = f (obj x) }) (headA bef) : tail bef, aft, aftBig) where
 	(befBig, just, bef, aft, aftBig) = goto n zip
 
-alter n f zip = alterBef (n + 1) f zip
+alter n f zip = backwards $ alterBef (n + 1) f zip
 
 insert ins (befBig, just, bef, aft, aftBig) = if null (tail ins) then
 		(befBig, just, bef, snd (head ins) ++ aft, aftBig)
@@ -474,7 +474,7 @@ findSelection0 ((x, _):xs) = case obj x of
 		Unselected -> findSelection0 xs
 findSelection0 [] = Nothing
 
-findSelection = maybe ([], 0, 0) id . findSelection0
+findSelection (_, _, _, aft, aftBig) = maybe ([], 0, 0) id $ findSelection0 $ toView ([], L, [], aft, aftBig)
 
 toolbarHeight = 40
 
@@ -573,7 +573,7 @@ main = do
 		delRow <- readIORef delRowRef
 		showAndHide (null bef) undo
 		showAndHide (null aft) redo
-		let (ls, _, _) = findSelection (toView textVal)
+		let (ls, _, _) = findSelection textVal
 		showAndHide (null ls) delCol
 		showAndHide (null ls) delRow
 		doOnTables ls $ \get _ _ _ -> do
@@ -593,7 +593,7 @@ main = do
 		writeIORef text (perform x textVal)
 		writeIORef drag Nothing
 		writeIORef select Nothing
-		let (ls, _, _) = findSelection (toView textVal)
+		let (ls, _, _) = findSelection textVal
 		when (ls == tableList x) $ doOnTables ls $ \_ _ setSelection _ -> case innerCommand x of
 			Insert n ls -> setSelection (n + length (concatMap snd ls)) (n + length (concatMap snd ls))
 			Delete n _ -> setSelection n n
@@ -637,8 +637,9 @@ main = do
 		g
 			(do
 				textVal <- readIORef text
-				let (_, m, _) = findSelection (toView textVal)
-				return $ goto m $ get textVal)
+				let gotten = get textVal
+				let (_, m, _) = findSelection gotten
+				return $ goto m gotten)
 			(\newText -> modifyIORef text (put newText) >> execOnChange)
 			(\m x -> do
 				modifyIORef text (\textVal -> put (setSelection m x $ toZipper $ clearSelection $ fromZipper $ get textVal) $ toZipper $ clearSelection $ fromZipper textVal)
@@ -674,13 +675,13 @@ main = do
 	let initialParagraph selection = [(L, [initialObject selection])]
 	let newTable = do
 		textVal <- readIORef text
-		let (ls, _, m) = findSelection (toView textVal)
+		let (ls, _, m) = findSelection textVal
 		doOnTables ls $ \_ _ _ performCommand -> do
 			let ob = Object 0 Unselected (Right $ Left [(100, [initialParagraph Unselected])]) mousedown mousemove mouseup
 			performCommand $ Insert m [(L, [(ob, Inline)])]
 	let newCol = do
 		textVal <- readIORef text
-		let (ls, _, _) = findSelection (toView textVal)
+		let (ls, _, _) = findSelection textVal
 		let (n, col, _) = last ls
 		if null ls then
 				newTable
@@ -688,7 +689,7 @@ main = do
 				performCommand $ NewCol n col (100, repeat (initialParagraph Unselected))
 	let newRow = do
 		textVal <- readIORef text
-		let (ls, _, _) = findSelection (toView textVal)
+		let (ls, _, _) = findSelection textVal
 		let (n, _, row) = last ls
 		if null ls then
 				newTable
@@ -696,7 +697,7 @@ main = do
 				performCommand $ NewRow n row (repeat (initialParagraph Unselected))
 	let delCol = do
 		textVal <- readIORef text
-		let (ls, _, _) = findSelection (toView textVal)
+		let (ls, _, _) = findSelection textVal
 		let (n, col, _) = last ls
 		doOnTables1 ls init $ \get _ _ performCommand -> do
 			textVal <- get
@@ -706,7 +707,7 @@ main = do
 					DelCol n col
 	let delRow = do
 		textVal <- readIORef text
-		let (ls, _, _) = findSelection (toView textVal)
+		let (ls, _, _) = findSelection textVal
 		let (n, _, row) = last ls
 		doOnTables1 ls init $ \get _ _ performCommand -> do
 			textVal <- get
@@ -768,7 +769,7 @@ main = do
 		execOnChange
 	let copy = do
 		textVal <- readIORef text
-		let (ls, n, m) = findSelection (toView textVal)
+		let (ls, n, m) = findSelection textVal
 		doOnTables ls $ \get _ _ _ -> do
 			textVal <- get
 			let bytestring = SB.pack $ LB.unpack $ encode $ let Insert _ ls = invertDelete n m textVal in ls
@@ -783,13 +784,13 @@ main = do
 			closeClipboard
 	let cut = do
 		textVal <- readIORef text
-		let (ls, n, m) = findSelection (toView textVal)
+		let (ls, n, m) = findSelection textVal
 		doOnTables ls $ \_ _ _ performCommand -> do
 			copy
 			performCommand (if m < n then Delete m n else Delete n m)
 	let paste = do
 		textVal <- readIORef text
-		let (ls, n, _) = findSelection (toView textVal)
+		let (ls, n, _) = findSelection textVal
 		doOnTables ls $ \get _ _ performCommand -> do
 			textVal <- get
 			insetWnd <- readIORef inset
@@ -808,19 +809,19 @@ main = do
 				(\(_ :: SomeException) -> return ())
 	let setJustification just = do
 		textVal <- readIORef text
-		let (ls, n, m) = findSelection (toView textVal)
+		let (ls, n, m) = findSelection textVal
 		doOnTables ls $ \get put _ _ -> do
 			textVal <- get
 			put $ setJustif just n m textVal
 	let setFloated flt' = do
 		textVal <- readIORef text
-		let (ls, _, _) = findSelection (toView textVal)
+		let (ls, _, _) = findSelection textVal
 		doOnTables ls $ \get put _ _ -> do
 			textVal <- get
 			put $ fromView textVal $ map (\(x, flt) -> (x, if not (isLeft (obj x)) && selection x == Selected then flt' else flt)) (toView textVal)
 	let setStyle hasStyle setStyle = do
 		textVal <- readIORef text
-		let (ls, _, _) = findSelection (toView textVal)
+		let (ls, _, _) = findSelection textVal
 		doOnTables ls $ \get put _ _ -> do
 			textVal <- get
 			let hasIt = all (\(x, _) -> selection x == Unselected || case obj x of
@@ -843,7 +844,7 @@ main = do
 	let link = do
 		insetWnd <- readIORef inset
 		textVal <- readIORef text
-		let (ls, n, _) = findSelection (toView textVal)
+		let (ls, n, _) = findSelection textVal
 		fileOpen insetWnd "Bitmaps (*.bmp)\0*.bmp\0" "bmp" >>= maybe
 			(return ())
 				(\path -> doOnTables ls $ \_ _ _ performCommand -> do
@@ -919,7 +920,7 @@ main = do
 			let name = mkClassName "Frame"
 			insetWnd <- createWindow name "" (wS_VISIBLE .|. wS_CHILD .|. wS_TABSTOP) Nothing Nothing Nothing Nothing (Just wnd) Nothing hdl (\wnd msg wParam lParam -> do
 				textVal <- readIORef text
-				let (ls, n, m) = findSelection (toView textVal)
+				let (ls, n, m) = findSelection textVal
 				doOnTables ls (insetProc format fontRef sizeRef clrRef mousedown mousemove mouseup wnd msg wParam lParam n m))
 			writeIORef inset insetWnd
 			proc <- attachLayout textLs insetWnd
@@ -932,7 +933,7 @@ main = do
 			focus <- getFocus
 			insetWnd <- readIORef inset
 			textVal <- readIORef text
-			let (ls, n, m) = findSelection (toView textVal)
+			let (ls, n, m) = findSelection textVal
 			when (loWord wParam == iDOK) $ doOnTables ls $ \get put _ performCommand -> do
 				textVal <- get
 				if focus == Just insetWnd then
