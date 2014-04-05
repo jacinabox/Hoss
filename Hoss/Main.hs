@@ -648,7 +648,7 @@ main = do
 				return $ goto m gotten)
 			(\newText -> modifyIORef text (put newText) >> execOnChange)
 			(\m x -> do
-				modifyIORef text $ \textVal -> put (setSelection m x $ clearSelection $ get textVal) $ clearSelection textVal
+				modifyIORef text $ \textVal -> put (setSelection m x $ (if null ls then clearSelection else toZipper . clearSelection0 . fromZipper) $ get textVal) $ clearSelection textVal
 				execOnChange)
 			(performCommand . makeCommand)
 	let mousemove (x, y) pr ob = do
