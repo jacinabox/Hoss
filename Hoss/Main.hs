@@ -792,7 +792,7 @@ main = do
 		let (ls, n, m) = findSelection textVal
 		doOnTables ls $ \_ _ _ performCommand -> do
 			copy
-			performCommand (if m < n then Delete m n else Delete n m)
+			performCommand (Delete n m)
 	let paste = do
 		textVal <- readIORef text
 		let (ls, n, _) = findSelection textVal
