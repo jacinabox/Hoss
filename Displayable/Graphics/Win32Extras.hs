@@ -358,3 +358,17 @@ withXFORM (eM11, eM12, eM21, eM22, eDx, eDy) f = do
 		pokeByteOff p 20 eDy
 		f p
 
+foreign import stdcall "windows.h PostMessageW" postMessage :: HWND -> WindowMessage -> WPARAM -> LPARAM -> IO Bool
+
+eN_UPDATE :: Word32
+eN_UPDATE = 1024
+
+cBN_EDITUPDATE :: Word32
+cBN_EDITUPDATE = 6
+
+cBN_SELENDOK :: Word32
+cBN_SELENDOK = 9
+
+lBN_SELCHANGE :: Word32
+lBN_SELCHANGE = 1
+
