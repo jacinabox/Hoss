@@ -178,8 +178,13 @@ withBITMAP (InfoV3 bi) f = do
 
 foreign import stdcall "windows.h GetSysColorBrush" getSysColorBrush :: Int32 -> IO HBRUSH
 
+foreign import stdcall "windows.h GetSysColor" getSysColor :: Int32 -> IO Word32
+
 cOLOR_3DFACE :: Int32
 cOLOR_3DFACE = 15
+
+cOLOR_WINDOWTEXT :: Int32
+cOLOR_WINDOWTEXT = 8
 
 {-type LOGFONT = ()
 
@@ -371,4 +376,102 @@ cBN_SELENDOK = 9
 
 lBN_SELCHANGE :: Word32
 lBN_SELCHANGE = 1
+
+bN_PUSHED :: Word32
+bN_PUSHED = 0
+
+hTBOTTOM :: Word32
+hTBOTTOM = 15
+
+hTBOTTOMLEFT :: Word32
+hTBOTTOMLEFT = 16
+
+hTBOTTOMRIGHT :: Word32
+hTBOTTOMRIGHT = 17
+
+hTCAPTION :: Word32
+hTCAPTION = 2
+
+hTLEFT :: Word32
+hTLEFT = 10
+
+hTRIGHT :: Word32
+hTRIGHT = 11
+
+hTTOP :: Word32
+hTTOP = 12
+
+hTTOPLEFT :: Word32
+hTTOPLEFT = 13
+
+hTTOPRIGHT :: Word32
+hTTOPRIGHT = 14
+
+hTCLOSE :: Word32
+hTCLOSE = 20
+
+hTMAXBUTTON :: Word32
+hTMAXBUTTON = 9
+
+hTMINBUTTON :: Word32
+hTMINBUTTON = 8
+
+foreign import stdcall "windows.h SetCapture" setCapture :: HWND -> IO HWND
+
+foreign import stdcall "windows.h ReleaseCapture" releaseCapture :: IO Bool
+
+sS_OWNERDRAW :: Word32
+sS_OWNERDRAW = 13
+
+foreign import stdcall "windows.h EnableWindow"
+  enableWindow' :: HWND -> Bool -> IO Bool
+
+wC_LISTVIEW = "SysListView32"
+
+lVS_REPORT :: Word32
+lVS_REPORT = 1
+
+lVS_SINGLESEL :: Word32
+lVS_SINGLESEL = 4
+
+wC_TREEVIEW = "SysTreeView32"
+
+lVM_FIRST :: Word32
+lVM_FIRST = 4096
+
+lVM_GETITEMCOUNT = lVM_FIRST + 4
+
+lVM_DELETEITEM = lVM_FIRST + 8
+
+lVM_INSERTITEM = lVM_FIRST + 77
+
+lVM_GETITEMSTATE = lVM_FIRST + 44
+
+lVM_SETITEMTEXT = lVM_FIRST + 116
+
+lVM_GETCOLUMN = lVM_FIRST + 95
+
+lVM_DELETECOLUMN = lVM_FIRST + 28
+
+lVM_INSERTCOLUMN = lVM_FIRST + 97
+
+lVM_SETCOLUMN = lVM_FIRST + 26
+
+lVIF_STATE :: Word32
+lVIF_STATE = 8
+
+lVIF_TEXT :: Word32
+lVIF_TEXT = 1
+
+lVCF_TEXT :: Word32
+lVCF_TEXT = 4
+
+lVCF_WIDTH :: Word32
+lVCF_WIDTH = 2
+
+lVIS_SELECTED :: Word32
+lVIS_SELECTED = 2
+
+tVM_INSERTITEM :: Word32
+tVM_INSERTITEM = 4352
 
