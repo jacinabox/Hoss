@@ -20,7 +20,7 @@ doScroll wnd off = do
 -- using the window's standard scroll bar.
 vScroll :: HWND -> WindowMessage -> WPARAM -> LPARAM -> IO ()
 vScroll wnd msg wParam lParam = if msg == wM_VSCROLL then do
-		si <- getScrollInfo wnd
+		si <- getScrollInfo wnd sB_VERT
 		let newY = if loWord wParam == sB_LINEDOWN then
 				nPos si + 10
 			else if loWord wParam == sB_LINEUP then
@@ -34,13 +34,13 @@ vScroll wnd msg wParam lParam = if msg == wM_VSCROLL then do
 			else
 				nPos si
 		let clampedY = max 0 (min newY (nMax si - fromIntegral (nPage si)))
-		setScrollInfo wnd (si { nPos = clampedY }) 
+		setScrollInfo wnd sB_VERT (si { nPos = clampedY }) 
 		doScroll wnd (clampedY - nPos si)
 	else if msg == wM_SIZE then do
-		si <- getScrollInfo wnd
+		si <- getScrollInfo wnd sB_VERT
 		(_, _, _, height) <- getClientRect wnd
-		setScrollInfo wnd (si { nPage = fromIntegral height })
-		si2 <- getScrollInfo wnd
+		setScrollInfo wnd sB_VERT (si { nPage = fromIntegral height })
+		si2 <- getScrollInfo wnd sB_VERT
 		doScroll wnd (nPos si2 - nPos si)
 	else
 		return ()

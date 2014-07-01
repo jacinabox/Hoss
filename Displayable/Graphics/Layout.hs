@@ -85,7 +85,7 @@ hitTest (x, y) ls = Just $ argmin (\(x2, y2, _) -> if x >= x2 && y >= y2 then x 
 paint layoutData wnd dc = do
 	font <- createNiceFont
 	oldFont <- selectFont dc font
-	pos <- liftM nPos (getScrollInfo wnd)
+	pos <- liftM nPos (getScrollInfo wnd sB_VERT)
 	lay <- readIORef layoutData
 	mapM_ (\(x, y, (z, _)) -> draw dc (x, y - pos) z) lay
 	selectFont dc oldFont
@@ -107,7 +107,7 @@ attachLayout ref wnd = do
 			else if msg == wM_LBUTTONUP || msg == wM_LBUTTONDOWN || msg == wM_MOUSEMOVE then do
 				lay <- readIORef layoutData
 				let pt = (loWord lParam, hiWord lParam)
-				si <- getScrollInfo wnd
+				si <- getScrollInfo wnd sB_VERT
 				maybe
 					(return ())
 					(\(x, y, (z, _)) -> mouse (if msg == wM_LBUTTONUP then MouseUp else
@@ -123,8 +123,8 @@ attachLayout ref wnd = do
 				(_, _, wdt, _) <- getClientRect wnd
 				let lay = layout wdt ((0, 0), (wdt, 0), 0) val
 				writeIORef layoutData lay
-				si <- getScrollInfo wnd
-				setScrollInfo wnd (si { nMax = maximum (0 : map (\(_, y, (z, _)) -> y + height z) lay) })
+				si <- getScrollInfo wnd sB_VERT
+				setScrollInfo wnd sB_VERT (si { nMax = maximum (0 : map (\(_, y, (z, _)) -> y + height z) lay) })
 				writeIORef pending False
 			paint layoutData wnd dc)
 		vScroll wnd msg wParam lParam

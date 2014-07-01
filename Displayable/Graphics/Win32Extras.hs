@@ -40,10 +40,10 @@ foreign import stdcall "windows.h SetScrollInfo" c_SetScrollInfo :: HWND -> Int3
 
 foreign import stdcall "windows.h GetScrollInfo" c_GetScrollInfo :: HWND -> Int32 -> Ptr SCROLLINFO -> IO Int32
 
-setScrollInfo wnd si = withSCROLLINFO si $ \p -> c_SetScrollInfo wnd sB_VERT p True
+setScrollInfo wnd bar si = withSCROLLINFO si $ \p -> c_SetScrollInfo wnd bar p True
 
-getScrollInfo wnd = withSCROLLINFO (SCROLLINFO sIF_ALL 0 0 0 0 0) $ \p -> do
-	c_GetScrollInfo wnd sB_VERT p
+getScrollInfo wnd bar = withSCROLLINFO (SCROLLINFO sIF_ALL 0 0 0 0 0) $ \p -> do
+	c_GetScrollInfo wnd bar p
 	readSCROLLINFO p
 
 data SCROLLINFO = SCROLLINFO { fMask :: Word32, nMin :: Int32, nMax :: Int32, nPage :: Word32, nPos :: Int32, nTrackPos :: Int32 } deriving Show
@@ -71,8 +71,14 @@ readSCROLLINFO p = do
 	nTrackPos <- peekByteOff p 24
 	return (SCROLLINFO fMask nMin nMax nPage nPos nTrackPos)
 
+sB_HORZ :: Int32
+sB_HORZ = 0
+
 sB_VERT :: Int32
 sB_VERT = 1
+
+sB_CTL :: Word32
+sB_CTL = 2
 
 sIF_ALL :: Word32
 sIF_ALL = 31
@@ -472,6 +478,33 @@ lVCF_WIDTH = 2
 lVIS_SELECTED :: Word32
 lVIS_SELECTED = 2
 
-tVM_INSERTITEM :: Word32
-tVM_INSERTITEM = 4352
+tVM_FIRST :: Word32
+tVM_FIRST = 4352
+
+tVM_INSERTITEM = tVM_FIRST
+
+tVM_DELETEITEM = tVM_FIRST + 1
+
+tVM_GETNEXTITEM = tVM_FIRST + 10
+
+tVM_GETITEM = tVM_FIRST + 12
+
+tVM_SETITEM = tVM_FIRST + 13
+
+tVGN_NEXT :: Word32
+tVGN_NEXT = 1
+
+tVGN_CHILD :: Word32
+tVGN_CHILD = 4
+
+tVIF_TEXT :: Word32
+tVIF_TEXT = 1
+
+tVIF_HANDLE :: Word32
+tVIF_HANDLE = 16
+
+tVS_HASLINES :: Word32
+tVS_HASLINES = 2
+
+foreign import stdcall "windows.h InitCommonControls" initCommonControls :: IO ()
 

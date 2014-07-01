@@ -347,14 +347,14 @@ attachDisplay ref wnd = do
 					val <- readIORef ref
 					font <- createNiceFont
 					oldFont <- selectFont dc font
-					pos <- liftM nPos (getScrollInfo wnd)
+					pos <- liftM nPos (getScrollInfo wnd sB_VERT)
 					draw dc (0, -pos) val
 					selectFont dc oldFont
 					deleteFont font
 					endPaint wnd ps
 			else if msg == wM_LBUTTONUP || msg == wM_LBUTTONDOWN || msg == wM_MOUSEMOVE then do
 				val <- readIORef ref
-				pos <- liftM nPos (getScrollInfo wnd)
+				pos <- liftM nPos (getScrollInfo wnd sB_VERT)
 				mouse (if msg == wM_LBUTTONUP then MouseUp else
 					if msg == wM_LBUTTONDOWN then MouseDown else
 					MouseMove) wnd wnds (loWord lParam, hiWord lParam) (0, -pos) val
@@ -372,7 +372,7 @@ attachDisplay ref wnd = do
 -- | Call this when the reference changes.
 onChange ref wnd = do
 	val <- readIORef ref
-	si <- getScrollInfo wnd
-	setScrollInfo wnd (si { nMax = snd (measure val) })
+	si <- getScrollInfo wnd sB_VERT
+	setScrollInfo wnd sB_VERT (si { nMax = snd (measure val) })
 	invalidateRect (Just wnd) Nothing True
 
