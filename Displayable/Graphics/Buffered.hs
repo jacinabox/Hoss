@@ -4,21 +4,21 @@ import Graphics.Win32
 import Control.Monad
 import Foreign.Ptr
 
+bufferedDraw wnd dc f = do
+	rt@(_, _, wd, ht) <- getClientRect wnd
+	dc' <- createCompatibleDC (Just dc)
+	bmp <- createCompatibleBitmap dc wd ht
+	oldBmp <- selectBitmap dc' bmp
+	f dc' rt
+	bitBlt dc 0 0 wd ht dc' 0 0 sRCCOPY
+	selectBitmap dc' oldBmp
+	deleteBitmap bmp
+	deleteDC dc'
+
 -- | Call this from your window procedure to do the given drawing
 --   code, double-buffered.
 buffered wnd msg f = when (msg == wM_PAINT) $ allocaPAINTSTRUCT $ \ps -> do
 	dc <- beginPaint wnd ps
-	dc' <- createCompatibleDC (Just dc)
-	(_, _, wdt, ht) <- getClientRect wnd
-	bmp <- createCompatibleBitmap dc wdt ht
-	oldBmp <- selectBitmap dc' bmp
-	white <- getStockBrush wHITE_BRUSH
-	fillRect dc' (0, 0, wdt, ht) white
-	rt <- peekRECT (ps `plusPtr` 8)
-	f dc' rt
-	bitBlt dc 0 0 wdt ht dc' 0 0 sRCCOPY
-	selectBitmap dc' oldBmp
-	deleteBitmap bmp
-	deleteDC dc'
+	bufferedDraw wnd dc f
 	endPaint wnd ps
 

@@ -107,7 +107,7 @@ sB_THUMBPOSITION = 4
 sB_THUMBTRACK :: Word32
 sB_THUMBTRACK = 5
 
-loWord x = x .&. 32767
+loWord x = x .&. 65535
 
 hiWord x = shiftR x 16
 
@@ -167,7 +167,7 @@ foreign import stdcall "windows.h SetDIBitsToDevice"
 
 withBITMAP :: BitmapInfo -> (Ptr () -> IO a) -> IO a
 withBITMAP (InfoV3 bi) f = do
-	fp <- mallocForeignPtrBytes 24
+	fp <- mallocForeignPtrBytes 40
 	withForeignPtr fp $ \p -> do
 		pokeByteOff p 0 (dib3Size bi)
 		pokeByteOff p 4 (dib3Width bi)
@@ -191,6 +191,15 @@ cOLOR_3DFACE = 15
 
 cOLOR_WINDOWTEXT :: Int32
 cOLOR_WINDOWTEXT = 8
+
+cOLOR_BTNSHADOW :: Int32
+cOLOR_BTNSHADOW = 16
+
+cOLOR_BTNHIGHLIGHT :: Int32
+cOLOR_BTNHIGHLIGHT = 20
+
+cOLOR_GRAYTEXT :: Int32
+cOLOR_GRAYTEXT = 17
 
 {-type LOGFONT = ()
 
@@ -371,6 +380,12 @@ withXFORM (eM11, eM12, eM21, eM22, eDx, eDy) f = do
 
 foreign import stdcall "windows.h PostMessageW" postMessage :: HWND -> WindowMessage -> WPARAM -> LPARAM -> IO Bool
 
+eN_GETSEL :: Word32
+eN_GETSEL = 176
+
+eN_SETSEL :: Word32
+eN_SETSEL = 177
+
 eN_UPDATE :: Word32
 eN_UPDATE = 1024
 
@@ -481,15 +496,15 @@ lVIS_SELECTED = 2
 tVM_FIRST :: Word32
 tVM_FIRST = 4352
 
-tVM_INSERTITEM = tVM_FIRST
+tVM_INSERTITEM = tVM_FIRST + 50
 
 tVM_DELETEITEM = tVM_FIRST + 1
 
 tVM_GETNEXTITEM = tVM_FIRST + 10
 
-tVM_GETITEM = tVM_FIRST + 12
+tVM_GETITEM = tVM_FIRST + 62
 
-tVM_SETITEM = tVM_FIRST + 13
+tVM_SETITEM = tVM_FIRST + 63
 
 tVGN_NEXT :: Word32
 tVGN_NEXT = 1
@@ -507,4 +522,29 @@ tVS_HASLINES :: Word32
 tVS_HASLINES = 2
 
 foreign import stdcall "windows.h InitCommonControls" initCommonControls :: IO ()
+
+oDT_BUTTON :: Word32
+oDT_BUTTON = 4
+
+oDA_DRAWENTIRE :: Word32
+oDA_DRAWENTIRE = 1
+
+oDA_SELECT :: Word32
+oDA_SELECT = 2
+
+oDA_FOCUS :: Word32
+oDA_FOCUS = 4
+
+oDS_SELECTED :: Word32
+oDS_SELECTED = 1
+
+oDS_DISABLED :: Word32
+oDS_DISABLED = 4
+
+oDS_FOCUS :: Word32
+oDS_FOCUS = 16
+
+foreign import stdcall "windows.h DrawFocusRect" c_DrawFocusRect :: HDC -> LPRECT -> IO Bool
+
+drawFocusRect dc rt = withRECT rt $ c_DrawFocusRect dc
 
